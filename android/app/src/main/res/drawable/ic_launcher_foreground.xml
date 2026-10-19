@@ -3,26 +3,10 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Camera Body Outline -->
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#38BDF8"
-        android:strokeWidth="4"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M30,38 L36,30 L72,30 L78,38 L86,38 C89.3,38 92,40.7 92,44 L92,76 C92,79.3 89.3,82 86,82 L22,82 C18.7,82 16,79.3 16,76 L16,44 C16,40.7 18.7,38 22,38 Z" />
-    <!-- Outer Lens Circle -->
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#60A5FA"
-        android:strokeWidth="4"
-        android:pathData="M54,44 A16,16 0 1,0 54,76 A16,16 0 1,0 54,44 Z" />
-    <!-- Lens Center Pupil -->
     <path
         android:fillColor="#38BDF8"
-        android:pathData="M54,54 A6,6 0 1,0 54,66 A6,6 0 1,0 54,54 Z" />
-    <!-- Flash Indicator -->
+        android:pathData="M38,32 L33.6,37.33 H22 C17.58,37.33 14,40.91 14,45.33 V77.33 C14,81.75 17.58,85.33 22,85.33 H86 C90.42,85.33 94,81.75 94,77.33 V45.33 C94,40.91 90.42,37.33 86,37.33 H74.4 L70,32 H38 Z M54,78.67 C41.48,78.67 31.33,68.52 31.33,56 C31.33,43.48 41.48,33.33 54,33.33 C66.52,33.33 76.67,43.48 76.67,56 C76.67,68.52 66.52,78.67 54,78.67 Z" />
     <path
-        android:fillColor="#FBBF24"
-        android:pathData="M78,44 A3,3 0 1,0 78,50 A3,3 0 1,0 78,44 Z" />
+        android:fillColor="#60A5FA"
+        android:pathData="M54,42.67 C46.64,42.67 40.67,48.64 40.67,56 C40.67,63.36 46.64,69.33 54,69.33 C61.36,69.33 67.33,63.36 67.33,56 C67.33,48.64 61.36,42.67 54,42.67 Z" />
 </vector>

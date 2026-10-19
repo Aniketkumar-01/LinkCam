@@ -40,7 +40,13 @@ jobs:
       - name: Build Android APK
         run: |
           cd android
-          gradle assembleDebug --stacktrace --no-daemon
+          gradle assembleDebug --stacktrace --no-daemon 2>&1 | tee ../build.log
+
+      - name: Dump Failure Logs on Error
+        if: failure()
+        run: |
+          echo "::error::Gradle build failed. Last 60 lines of output:"
+          tail -n 60 build.log
 
       - name: Rename APK for Release
         run: |

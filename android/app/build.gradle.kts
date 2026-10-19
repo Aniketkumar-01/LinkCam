@@ -18,11 +18,6 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-
-        ndk {
-            // Target modern ARM64-v8a architecture as requested
-            abiFilters.add("arm64-v8a")
-        }
     }
 
     buildTypes {

@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.0.4",
-    [string]$Message = "Release v1.0.4: Fix Android compilation syntax error, launcher icons, and CI pipeline"
+    [string]$Tag = "v1.0.5",
+    [string]$Message = "Release v1.0.5: Remove unnecessary ndk block, clean gradle network config, and add CI failure dump"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan

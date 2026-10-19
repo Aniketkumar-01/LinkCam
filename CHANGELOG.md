@@ -5,6 +5,14 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-10-20
+
+### Fixed
+- **Android NDK Toolchain Trigger**: Removed unneeded `ndk { abiFilters.add("arm64-v8a") }` block from `build.gradle.kts`. Pure Kotlin/Java Android projects without C++ code must not declare `ndk`, which was triggering AGP to look for and fail on the missing Android NDK (`No version of NDK matched the requested version`).
+- **Gradle Networking Clean-Up**: Removed `systemProp.http.keepAlive=false` and hardcoded socket timeout overrides from `gradle.properties` that caused HTTPS connection drops, handshake failures, and dependency download timeouts in CI.
+- **AAPT2 Vector Path Compliance**: Scaled and normalized vector icon path data in `ic_launcher_foreground.xml` to standard cubic Beziers.
+- **CI Build Log Telemetry**: Added output tee and failure log dump step in `.github/workflows/release.yml` so any build issues are printed directly in GitHub Actions summaries.
+
 ## [1.0.4] - 2026-10-20
 
 ### Fixed
