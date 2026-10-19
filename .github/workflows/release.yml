@@ -26,6 +26,9 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
@@ -80,10 +83,9 @@ jobs:
           cd desktop
           npm run build
 
-      - name: Build Tauri Desktop Companion
+      - name: Build Desktop Companion (Rust / Tauri)
         run: |
-          cd desktop
-          npm run tauri build || echo "Tauri standalone build complete"
+          cargo build --release --manifest-path desktop/src-tauri/Cargo.toml
 
       - name: Package Windows Artifacts
         shell: pwsh

@@ -113,6 +113,11 @@ impl NetworkServer {
             return Ok(());
         }
 
+        if header.payload_length as usize > Packet::MAX_PAYLOAD_SIZE {
+            eprintln!("[LinkCam] PairingAuth payload exceeds MAX_PAYLOAD_SIZE: {}", header.payload_length);
+            return Ok(());
+        }
+
         let mut payload = vec![0u8; header.payload_length as usize];
         reader.read_exact(&mut payload).await?;
 
@@ -158,6 +163,11 @@ impl NetworkServer {
                 Ok(h) => h,
                 Err(_) => break,
             };
+
+            if hdr.payload_length as usize > Packet::MAX_PAYLOAD_SIZE {
+                eprintln!("[LinkCam] Frame payload exceeds MAX_PAYLOAD_SIZE: {}", hdr.payload_length);
+                break;
+            }
 
             let mut body = vec![0u8; hdr.payload_length as usize];
             if let Err(_) = reader.read_exact(&mut body).await {

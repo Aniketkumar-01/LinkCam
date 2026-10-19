@@ -28,6 +28,7 @@ data class PacketHeader(
         const val TYPE_TELEMETRY_HEARTBEAT: Byte = 0x30
 
         const val FLAG_KEYFRAME: Byte = 0x01
+        const val MAX_PAYLOAD_SIZE = 16 * 1024 * 1024 // 16 MB max frame/chunk
 
         fun readFrom(buffer: ByteBuffer): PacketHeader {
             buffer.order(ByteOrder.BIG_ENDIAN)
@@ -44,6 +45,10 @@ data class PacketHeader(
             val sequence = buffer.int
             val timestamp = buffer.long
             val payloadLength = buffer.int
+
+            if (payloadLength < 0 || payloadLength > MAX_PAYLOAD_SIZE) {
+                throw IllegalArgumentException("Payload length out of bounds: $payloadLength (max: $MAX_PAYLOAD_SIZE)")
+            }
 
             return PacketHeader(version, packetType, flags, sequence, timestamp, payloadLength)
         }

@@ -17,10 +17,15 @@ pub struct DeliveredCaptureEvent {
     pub preview_base64: Option<String>,
 }
 
+const MAX_TRANSFER_CHUNKS: u32 = 10_000;
+const MAX_TRANSFER_BYTES: u64 = 256 * 1024 * 1024; // 256 MB max capture
+const TRANSFER_TTL_SECS: u64 = 300; // 5 minutes timeout
+
 struct ActiveTransfer {
     meta: InstantCaptureMeta,
     chunks: Vec<Option<Vec<u8>>>,
     received_count: u32,
+    created_at: std::time::Instant,
 }
 
 pub struct CaptureReceiver {
@@ -53,15 +58,34 @@ impl CaptureReceiver {
         let meta: InstantCaptureMeta = serde_json::from_slice(meta_json)
             .map_err(|e| format!("Failed to parse capture meta: {}", e))?;
 
+        // Validate metadata bounds
+        if meta.total_chunks == 0 || meta.total_chunks > MAX_TRANSFER_CHUNKS {
+            return Err(format!("Invalid total_chunks count: {}", meta.total_chunks));
+        }
+        if meta.chunk_index >= meta.total_chunks {
+            return Err(format!("Chunk index {} out of bounds ({})", meta.chunk_index, meta.total_chunks));
+        }
+        if meta.total_size > MAX_TRANSFER_BYTES {
+            return Err(format!("Transfer total_size {} exceeds 256MB limit", meta.total_size));
+        }
+
         let chunk_data = packet.payload[4 + meta_len..].to_vec();
 
         let mut transfers = self.transfers.write().await;
+        // Prune stale transfers older than TTL
+        transfers.retain(|_, t| t.created_at.elapsed().as_secs() < TRANSFER_TTL_SECS);
+
+        if !transfers.contains_key(&meta.transfer_id) && transfers.len() >= 50 {
+            return Err("Max concurrent active transfers reached".to_string());
+        }
+
         let transfer = transfers.entry(meta.transfer_id.clone()).or_insert_with(|| {
             let total = meta.total_chunks as usize;
             ActiveTransfer {
                 meta: meta.clone(),
                 chunks: vec![None; total],
                 received_count: 0,
+                created_at: std::time::Instant::now(),
             }
         });
 

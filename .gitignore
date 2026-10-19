@@ -1,6 +1,5 @@
 # Dependencies & Package Managers
 node_modules/
-package-lock.json
 
 # Rust & Tauri Builds
 target/

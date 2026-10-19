@@ -55,13 +55,24 @@ class SocketTransport(
                 outputStream?.flush()
 
                 // Read Auth Response (24 bytes header + payload)
+                val inStream = inputStream ?: throw java.io.IOException("Socket stream closed")
                 val respHeaderBytes = ByteArray(PacketHeader.HEADER_SIZE)
-                inputStream?.read(respHeaderBytes)
+                if (!readFully(inStream, respHeaderBytes)) {
+                    disconnect()
+                    return@launch
+                }
                 val respHeader = PacketHeader.readFrom(ByteBuffer.wrap(respHeaderBytes))
 
                 if (respHeader.packetType == PacketHeader.TYPE_PAIRING_AUTH_RESPONSE) {
+                    if (respHeader.payloadLength < 0 || respHeader.payloadLength > PacketHeader.MAX_PAYLOAD_SIZE) {
+                        disconnect()
+                        return@launch
+                    }
                     val respPayload = ByteArray(respHeader.payloadLength)
-                    inputStream?.read(respPayload)
+                    if (!readFully(inStream, respPayload)) {
+                        disconnect()
+                        return@launch
+                    }
                     if (String(respPayload) == "OK") {
                         isRunning = true
                         onStatusChange(ConnectionStatus.CONNECTED)
@@ -77,22 +88,29 @@ class SocketTransport(
         }
     }
 
+    private fun readFully(stream: InputStream, buffer: ByteArray, offset: Int = 0, length: Int = buffer.size): Boolean {
+        var total = 0
+        while (total < length) {
+            val read = stream.read(buffer, offset + total, length - total)
+            if (read == -1) return false
+            total += read
+        }
+        return true
+    }
+
     private fun startReceiveLoop() {
         scope.launch {
+            val inStream = inputStream ?: return@launch
             val headerBuffer = ByteArray(PacketHeader.HEADER_SIZE)
             while (isRunning) {
                 try {
-                    val bytesRead = inputStream?.read(headerBuffer) ?: -1
-                    if (bytesRead < PacketHeader.HEADER_SIZE) break
+                    if (!readFully(inStream, headerBuffer)) break
 
                     val header = PacketHeader.readFrom(ByteBuffer.wrap(headerBuffer))
+                    if (header.payloadLength < 0 || header.payloadLength > PacketHeader.MAX_PAYLOAD_SIZE) break
+
                     val payload = ByteArray(header.payloadLength)
-                    var totalRead = 0
-                    while (totalRead < header.payloadLength) {
-                        val read = inputStream?.read(payload, totalRead, header.payloadLength - totalRead) ?: -1
-                        if (read == -1) break
-                        totalRead += read
-                    }
+                    if (!readFully(inStream, payload)) break
 
                     if (header.packetType == PacketHeader.TYPE_CAMERA_CONTROL) {
                         val jsonString = String(payload, Charsets.UTF_8)
