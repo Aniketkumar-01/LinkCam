@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/Aniketkumar-01/LinkCam/discussions
+    about: Ask questions, share setup tips, or chat about LinkCam development.
+  - name: 🔒 Security Vulnerability Report
+    url: https://github.com/Aniketkumar-01/LinkCam/security/advisories/new
+    about: Privately disclose sensitive security vulnerabilities.

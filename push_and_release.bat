@@ -1,8 +1,11 @@
 @echo off
 setlocal enabledelayedexpansion
 
+set TAG=%1
+if "%TAG%"=="" set TAG=v1.0.4
+
 echo ========================================================
-echo   LinkCam - Git Push and Release Automation
+echo   LinkCam - Git Push and Release Automation (!TAG!)
 echo ========================================================
 echo Target Remote: https://github.com/Aniketkumar-01/LinkCam.git
 echo.
@@ -29,8 +32,8 @@ echo [*] Staging files...
 git add .
 
 REM 5. Commit changes
-echo [*] Committing v1.0.0 release...
-git commit -m "feat: initial release v1.0.0 (LinkCam Continuity Companion)"
+echo [*] Committing !TAG! release...
+git commit -m "fix(android): fix kotlin syntax error, add launcher icons, and stabilize CI build (!TAG!)"
 
 REM 6. Push to main branch
 echo [*] Pushing to GitHub (main)...
@@ -41,11 +44,11 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
-REM 7. Create and push tag v1.0.0
-echo [*] Tagging v1.0.0 release...
-git tag -d v1.0.0 2>nul
-git tag -a v1.0.0 -m "Release v1.0.0: Continuity Camera Companion for Android & Windows"
-git push origin v1.0.0 --force
+REM 7. Create and push tag
+echo [*] Tagging !TAG! release...
+git tag -d !TAG! 2>nul
+git tag -a !TAG! -m "Release !TAG!: Continuity Camera Companion for Android and Windows"
+git push origin !TAG! --force
 
 REM 8. Create GitHub release via gh CLI if available
 where gh >nul 2>nul

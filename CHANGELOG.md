@@ -5,6 +5,16 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-10-20
+
+### Fixed
+- **Android Kotlin Syntax Error**: Fixed invalid TypeScript arrow syntax `() => Unit` in `MeetingModeOverlay.kt` to valid Kotlin function signature `() -> Unit` which caused compilation failure.
+- **Android App Launcher Icons**: Created missing adaptive and fallback vector drawables (`ic_launcher.xml`, `ic_launcher_round.xml`, `ic_launcher_foreground.xml`, and `colors.xml`) in `res/`, resolving AAPT resource linking failure.
+- **Android SDK & Toolchain Standardization**: Set `compileSdk = 34` and `targetSdk = 34` for Android Gradle Plugin 8.3.2 native compatibility on Ubuntu runners, added `android.suppressUnsupportedCompileSdk=35`, and bumped ML Kit Document Scanner to stable `16.0.0`.
+- **YuvImage Stride Safety**: Provided explicit non-null row strides in `CameraStreamer.kt` preventing nullability constraint errors during image processing.
+- **GitHub Actions CI Resilience**: Set `cache-disabled: true` on `gradle/actions/setup-gradle@v3` to prevent runner cache service HTTP 400 failures, and made APK artifact collection robust using `find`.
+- **Windows Setup Installer (`LinkCam-Windows-Setup.exe`)**: Added Inno Setup packaging script (`installer.iss`) to compile an installer with Start Menu & Desktop shortcuts, auto-startup option, and clean uninstaller alongside the portable binary.
+
 ## [1.0.3] - 2026-10-19
 
 ### Fixed

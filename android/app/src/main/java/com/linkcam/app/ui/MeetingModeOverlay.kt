@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun MeetingModeOverlay(
-    onExitMeetingMode: () => Unit,
+    onExitMeetingMode: () -> Unit,
     fps: Float,
     batteryPct: Int
 ) {

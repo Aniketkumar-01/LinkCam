@@ -1,5 +1,10 @@
+param(
+    [string]$Tag = "v1.0.4",
+    [string]$Message = "Release v1.0.4: Fix Android compilation syntax error, launcher icons, and CI pipeline"
+)
+
 Write-Host "========================================================" -ForegroundColor Cyan
-Write-Host "  LinkCam - Git Push & Release Automation" -ForegroundColor Cyan
+Write-Host "  LinkCam - Git Push & Release Automation ($Tag)" -ForegroundColor Cyan
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host "Target Remote: https://github.com/Aniketkumar-01/LinkCam.git`n"
 
@@ -21,8 +26,8 @@ git remote add origin https://github.com/Aniketkumar-01/LinkCam.git
 Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
-Write-Host "[*] Committing v1.0.0 release..." -ForegroundColor Yellow
-git commit -m "feat: initial release v1.0.0 (LinkCam Continuity Companion)"
+Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
+git commit -m "fix(android): fix kotlin syntax error, add launcher icons, and stabilize CI build ($Tag)"
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow
@@ -34,10 +39,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # 5. Tag and Push Tag
-Write-Host "[*] Tagging v1.0.0..." -ForegroundColor Yellow
-git tag -d v1.0.0 2>$null
-git tag -a v1.0.0 -m "Release v1.0.0: Continuity Camera Companion for Android & Windows"
-git push origin v1.0.0 --force
+Write-Host "[*] Tagging $Tag..." -ForegroundColor Yellow
+git tag -d $Tag 2>$null
+git tag -a $Tag -m "$Message"
+git push origin $Tag --force
 
 # 6. GitHub Release via gh CLI if installed
 if (Get-Command gh -ErrorAction SilentlyContinue) {

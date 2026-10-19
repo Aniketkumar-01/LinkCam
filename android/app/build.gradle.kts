@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.linkcam.app"
-    compileSdk = 35
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.linkcam.app"
         minSdk = 29 // Android 10+
-        targetSdk = 35
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
 
@@ -96,7 +96,7 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.2.0")
 
     // Document Scanning (Google Play Services Document Scanner / Vision Edge)
-    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

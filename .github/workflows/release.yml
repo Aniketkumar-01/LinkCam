@@ -26,12 +26,13 @@ jobs:
       - name: Accept Android SDK Licenses & Prepare Platforms
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "platforms;android-35" "build-tools;34.0.0" || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.4'
+          cache-disabled: true
 
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
@@ -44,7 +45,7 @@ jobs:
       - name: Rename APK for Release
         run: |
           mkdir -p artifacts
-          cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/LinkCam-Android.apk
+          find android/app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/LinkCam-Android.apk \;
 
       - name: Upload Android APK Asset
         uses: actions/upload-artifact@v4
@@ -91,17 +92,24 @@ jobs:
         run: |
           cargo build --release --manifest-path desktop/src-tauri/Cargo.toml
 
+      - name: Build Windows Setup Installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (Test-Path $iscc) {
+            & $iscc desktop/installer.iss
+          }
+
       - name: Package Windows Artifacts
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifacts
+          if (Test-Path "desktop/Output/LinkCam-Windows-Setup.exe") {
+            Copy-Item "desktop/Output/LinkCam-Windows-Setup.exe" "artifacts/LinkCam-Windows-Setup.exe"
+          }
           if (Test-Path "desktop/src-tauri/target/release/linkcam-desktop.exe") {
-            Copy-Item "desktop/src-tauri/target/release/linkcam-desktop.exe" "artifacts/LinkCam-Windows-x64.exe"
-          } elseif (Test-Path "desktop/src-tauri/target/release/bundle/nsis/*.exe") {
-            Copy-Item "desktop/src-tauri/target/release/bundle/nsis/*.exe" "artifacts/LinkCam-Windows-Setup.exe"
-          } else {
-            # Package dist frontend and binary wrapper
-            Compress-Archive -Path "desktop/dist/*" -DestinationPath "artifacts/LinkCam-Windows-WebPreview.zip"
+            Copy-Item "desktop/src-tauri/target/release/linkcam-desktop.exe" "artifacts/LinkCam-Windows-Portable.exe"
           }
 
       - name: Attach Windows Executable to GitHub Release

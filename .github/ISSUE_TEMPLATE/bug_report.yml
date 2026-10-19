@@ -1,0 +1,74 @@
+name: 🐛 Bug Report
+description: Create a report to help us improve LinkCam
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue with **LinkCam**!
+        Please fill out this form with as much detail as possible.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which part of LinkCam encountered the issue?
+      options:
+        - Windows Desktop Companion (Tauri / Rust)
+        - Android Camera App (Kotlin / Compose)
+        - Virtual Camera Driver (Windows Media Foundation)
+        - Instant Capture & Windows Clipboard
+        - Network Streaming (USB / Direct Hotspot / Wi-Fi)
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating System & Hardware
+      description: Please share your Windows and Android OS versions and hardware models.
+      placeholder: "Windows 11 23H2 (x64), Pixel 8 Pro / Android 14"
+    validations:
+      required: true
+  - type: dropdown
+    id: connection_mode
+    attributes:
+      label: Connection Mode
+      description: How was your phone connected to your PC?
+      options:
+        - USB (ADB Loopback)
+        - Direct Mobile Hotspot (192.168.43.1)
+        - Local Wi-Fi Router
+    validations:
+      required: true
+  - type: textarea
+    id: describe_bug
+    attributes:
+      label: Describe the Bug
+      description: A clear and concise description of what happened.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction_steps
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the behavior.
+      placeholder: |
+        1. Launch LinkCam on Windows
+        2. Open LinkCam on Android and connect via Hotspot
+        3. Switch lens to Ultra-Wide
+        4. See error...
+    validations:
+      required: true
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Screenshots
+      description: Paste any console or terminal logs, or drag and drop screenshots here.
+      render: shell

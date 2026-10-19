@@ -80,7 +80,7 @@ class CameraStreamer(
 
         // Convert YUV_420_888 to high-performance JPEG stream frame
         val nv21 = yuv420ToNv21(imageProxy)
-        val yuvImage = YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, null)
+        val yuvImage = YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, intArrayOf(imageProxy.width, imageProxy.width))
         val out = ByteArrayOutputStream()
         yuvImage.compressToJpeg(Rect(0, 0, imageProxy.width, imageProxy.height), 85, out)
 
