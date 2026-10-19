@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LinkCamWireProtocol",
+  "description": "Shared wire protocol, RPC schemas, and telemetry definitions for LinkCam",
+  "definitions": {
+    "PacketType": {
+      "type": "string",
+      "enum": [
+        "VideoFrame",
+        "AudioFrame",
+        "InstantCaptureChunk",
+        "PairingAuth",
+        "PairingAuthResponse",
+        "CameraControl",
+        "CameraControlAck",
+        "TelemetryHeartbeat"
+      ]
+    },
+    "CameraLens": {
+      "type": "string",
+      "enum": ["RearWide", "RearUltraWide", "RearTelephoto", "Front"]
+    },
+    "CaptureMode": {
+      "type": "string",
+      "enum": ["Photo", "DocumentScan"]
+    },
+    "ConnectionMode": {
+      "type": "string",
+      "enum": ["Usb", "WiFi", "DirectHotspot"]
+    },
+    "CameraControl": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "SetResolution",
+            "SetCameraLens",
+            "SetTorch",
+            "SetZoom",
+            "SetExposure",
+            "SetMeetingMode",
+            "TriggerInstantCapture"
+          ]
+        },
+        "params": {
+          "type": "object"
+        }
+      },
+      "required": ["action"]
+    },
+    "TelemetryHeartbeat": {
+      "type": "object",
+      "properties": {
+        "fps": { "type": "number" },
+        "bitrate_kbps": { "type": "integer" },
+        "latency_ms": { "type": "integer" },
+        "battery_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "is_charging": { "type": "boolean" },
+        "thermal_state": { "type": "string" },
+        "connection_mode": { "$ref": "#/definitions/ConnectionMode" }
+      },
+      "required": [
+        "fps",
+        "bitrate_kbps",
+        "latency_ms",
+        "battery_pct",
+        "is_charging",
+        "thermal_state",
+        "connection_mode"
+      ]
+    },
+    "InstantCaptureMeta": {
+      "type": "object",
+      "properties": {
+        "transfer_id": { "type": "string" },
+        "file_name": { "type": "string" },
+        "mime_type": { "type": "string", "enum": ["image/jpeg", "image/png", "application/pdf"] },
+        "total_size": { "type": "integer" },
+        "chunk_index": { "type": "integer" },
+        "total_chunks": { "type": "integer" },
+        "sha256_checksum": { "type": "string" }
+      },
+      "required": [
+        "transfer_id",
+        "file_name",
+        "mime_type",
+        "total_size",
+        "chunk_index",
+        "total_chunks",
+        "sha256_checksum"
+      ]
+    }
+  }
+}

@@ -1,0 +1,77 @@
+package com.linkcam.app.protocol
+
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+/**
+ * LinkCam Wire Protocol Binary Packet (24-byte header)
+ */
+data class PacketHeader(
+    val version: Byte = 1,
+    val packetType: Byte,
+    var flags: Byte = 0,
+    val sequence: Int,
+    val timestamp: Long,
+    val payloadLength: Int
+) {
+    companion object {
+        val MAGIC_BYTES = byteArrayOf('L'.code.toByte(), 'N'.code.toByte(), 'K'.code.toByte(), 'C'.code.toByte())
+        const val HEADER_SIZE = 24
+
+        const val TYPE_VIDEO_FRAME: Byte = 0x01
+        const val TYPE_AUDIO_FRAME: Byte = 0x02
+        const val TYPE_INSTANT_CAPTURE_CHUNK: Byte = 0x03
+        const val TYPE_PAIRING_AUTH: Byte = 0x10
+        const val TYPE_PAIRING_AUTH_RESPONSE: Byte = 0x11
+        const val TYPE_CAMERA_CONTROL: Byte = 0x20
+        const val TYPE_CAMERA_CONTROL_ACK: Byte = 0x21
+        const val TYPE_TELEMETRY_HEARTBEAT: Byte = 0x30
+
+        const val FLAG_KEYFRAME: Byte = 0x01
+
+        fun readFrom(buffer: ByteBuffer): PacketHeader {
+            buffer.order(ByteOrder.BIG_ENDIAN)
+            val magic = ByteArray(4)
+            buffer.get(magic)
+            if (!magic.contentEquals(MAGIC_BYTES)) {
+                throw IllegalArgumentException("Invalid magic header")
+            }
+
+            val version = buffer.get()
+            val packetType = buffer.get()
+            val flags = buffer.get()
+            val reserved = buffer.get()
+            val sequence = buffer.int
+            val timestamp = buffer.long
+            val payloadLength = buffer.int
+
+            return PacketHeader(version, packetType, flags, sequence, timestamp, payloadLength)
+        }
+    }
+
+    fun toByteArray(): ByteArray {
+        val buffer = ByteBuffer.allocate(HEADER_SIZE)
+        buffer.order(ByteOrder.BIG_ENDIAN)
+        buffer.put(MAGIC_BYTES)
+        buffer.put(version)
+        buffer.put(packetType)
+        buffer.put(flags)
+        buffer.put(0.toByte()) // reserved
+        buffer.putInt(sequence)
+        buffer.putLong(timestamp)
+        buffer.putInt(payloadLength)
+        return buffer.array()
+    }
+}
+
+data class Packet(
+    val header: PacketHeader,
+    val payload: ByteArray
+) {
+    fun toByteArray(): ByteArray {
+        val bytes = ByteArray(PacketHeader.HEADER_SIZE + payload.size)
+        System.arraycopy(header.toByteArray(), 0, bytes, 0, PacketHeader.HEADER_SIZE)
+        System.arraycopy(payload, 0, bytes, PacketHeader.HEADER_SIZE, payload.size)
+        return bytes
+    }
+}
