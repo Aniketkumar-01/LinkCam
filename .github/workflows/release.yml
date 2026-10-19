@@ -51,7 +51,25 @@ jobs:
       - name: Rename APK for Release
         run: |
           mkdir -p artifacts
-          find android/app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/LinkCam-Android.apk \;
+          if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
+            echo "Found debug APK: android/app/build/outputs/apk/debug/app-debug.apk"
+            cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/LinkCam-Android.apk
+          elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+            echo "Found unsigned release APK: android/app/build/outputs/apk/release/app-release-unsigned.apk"
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk artifacts/LinkCam-Android.apk
+          else
+            echo "Searching for any generated APK in android/app/build..."
+            APK_FILE=$(find android/app/build -type f -name "*.apk" | head -n 1)
+            if [ -n "$APK_FILE" ]; then
+              echo "Found APK: $APK_FILE"
+              cp "$APK_FILE" artifacts/LinkCam-Android.apk
+            else
+              echo "::error::No APK file found in android/app/build. Directory contents:"
+              find android -maxdepth 5 || true
+              exit 1
+            fi
+          fi
+          ls -lh artifacts/LinkCam-Android.apk
 
       - name: Upload Android APK Asset
         uses: actions/upload-artifact@v4
@@ -102,9 +120,19 @@ jobs:
         shell: pwsh
         run: |
           choco install innosetup -y
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue)?.Source
+          if (-not $iscc) {
+            $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) {
+            $iscc = "C:\Program Files\Inno Setup 6\ISCC.exe"
+          }
+          Write-Host "Inno Setup compiler path: $iscc"
           if (Test-Path $iscc) {
             & $iscc desktop/installer.iss
+          } else {
+            Write-Warning "ISCC.exe not found at standard path, attempting invocation from environment..."
+            iscc desktop/installer.iss
           }
 
       - name: Package Windows Artifacts
@@ -117,11 +145,19 @@ jobs:
           if (Test-Path "desktop/src-tauri/target/release/linkcam-desktop.exe") {
             Copy-Item "desktop/src-tauri/target/release/linkcam-desktop.exe" "artifacts/LinkCam-Windows-Portable.exe"
           }
+          Get-ChildItem artifacts
 
-      - name: Attach Windows Executable to GitHub Release
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinkCam-Windows-Binaries
+          path: artifacts/*
+
+      - name: Attach Windows Executables to GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

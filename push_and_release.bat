@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 set TAG=%1
-if "%TAG%"=="" set TAG=v1.0.5
+if "%TAG%"=="" set TAG=v1.0.6
 
 echo ========================================================
 echo   LinkCam - Git Push and Release Automation (!TAG!)
@@ -33,7 +33,7 @@ git add .
 
 REM 5. Commit changes
 echo [*] Committing !TAG! release...
-git commit -m "fix(android): fix kotlin syntax error, add launcher icons, and stabilize CI build (!TAG!)"
+git commit -m "fix(ci): fix apk renaming step in release workflow and bump to !TAG!"
 
 REM 6. Push to main branch
 echo [*] Pushing to GitHub (main)...
@@ -54,13 +54,13 @@ REM 8. Create GitHub release via gh CLI if available
 where gh >nul 2>nul
 if %errorlevel% equ 0 (
     echo [*] Creating GitHub Release via gh CLI...
-    gh release create v1.0.0 --title "LinkCam v1.0.0 - Continuity Camera Companion" --notes-file CHANGELOG.md
+    gh release create !TAG! --title "LinkCam !TAG! - Continuity Camera Companion" --notes-file CHANGELOG.md
     if %errorlevel% equ 0 (
-        echo [OK] GitHub Release v1.0.0 successfully created!
+        echo [OK] GitHub Release !TAG! successfully created!
     )
 ) else (
-    echo [i] GitHub CLI (gh) not detected. Tag v1.0.0 has been pushed. You can publish the release notes directly at:
-    echo     https://github.com/Aniketkumar-01/LinkCam/releases/new?tag=v1.0.0
+    echo [i] GitHub CLI (gh) not detected. Tag !TAG! has been pushed. You can publish the release notes directly at:
+    echo     https://github.com/Aniketkumar-01/LinkCam/releases/new?tag=!TAG!
 )
 
 echo.

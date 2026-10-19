@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.0.5",
-    [string]$Message = "Release v1.0.5: Remove unnecessary ndk block, clean gradle network config, and add CI failure dump"
+    [string]$Tag = "v1.0.6",
+    [string]$Message = "Release v1.0.6: Fix APK renaming step in CI, enhance Inno Setup discovery, and publish Android and Windows binaries"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -27,7 +27,7 @@ Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
 Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
-git commit -m "fix(android): fix kotlin syntax error, add launcher icons, and stabilize CI build ($Tag)"
+git commit -m "fix(ci): fix apk renaming step in release workflow and bump to $Tag"
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow
@@ -47,13 +47,13 @@ git push origin $Tag --force
 # 6. GitHub Release via gh CLI if installed
 if (Get-Command gh -ErrorAction SilentlyContinue) {
     Write-Host "[*] Creating GitHub Release via gh CLI..." -ForegroundColor Yellow
-    gh release create v1.0.0 --title "LinkCam v1.0.0 - Continuity Camera Companion" --notes-file CHANGELOG.md
+    gh release create $Tag --title "LinkCam $Tag - Continuity Camera Companion" --notes-file CHANGELOG.md
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "[OK] GitHub Release v1.0.0 successfully created!" -ForegroundColor Green
+        Write-Host "[OK] GitHub Release $Tag successfully created!" -ForegroundColor Green
     }
 } else {
-    Write-Host "[i] GitHub CLI (gh) not detected. Tag v1.0.0 pushed. Publish release at:" -ForegroundColor Cyan
-    Write-Host "    https://github.com/Aniketkumar-01/LinkCam/releases/new?tag=v1.0.0" -ForegroundColor Cyan
+    Write-Host "[i] GitHub CLI (gh) not detected. Tag $Tag pushed. Publish release at:" -ForegroundColor Cyan
+    Write-Host "    https://github.com/Aniketkumar-01/LinkCam/releases/new?tag=$Tag" -ForegroundColor Cyan
 }
 
 Write-Host "`n[DONE] Project pushed and released on https://github.com/Aniketkumar-01/LinkCam" -ForegroundColor Green
