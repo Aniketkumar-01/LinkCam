@@ -1,5 +1,5 @@
 import React from 'react';
-import { Copy, FileText, FolderOpen, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Copy, FileText, FolderOpen, Image as ImageIcon } from 'lucide-react';
 import { DeliveredCapture } from './QuickCaptureTray';
 
 interface CapturesGalleryProps {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Copy, ExternalLink, FileText, FolderOpen, Image as ImageIcon, X } from 'lucide-react';
+import { Check, Copy, FileText, FolderOpen, Image as ImageIcon, X } from 'lucide-react';
 
 export interface DeliveredCapture {
   id: string;

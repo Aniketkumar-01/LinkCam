@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Grid, Maximize2, RefreshCw, Smartphone } from 'lucide-react';
+import { Grid, Smartphone } from 'lucide-react';
 import { CameraControls, CameraLensType } from './CameraControls';
 import { StreamHUD } from './StreamHUD';
 

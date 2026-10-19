@@ -1,5 +1,5 @@
 import React from 'react';
-import { Camera, FileText, Flashlight, FlipHorizontal, Moon, Sliders, Sun, ZoomIn } from 'lucide-react';
+import { Camera, FileText, Flashlight, Moon, Sun, ZoomIn } from 'lucide-react';
 
 export type CameraLensType = 'RearWide' | 'RearUltraWide' | 'RearTelephoto' | 'Front';
 

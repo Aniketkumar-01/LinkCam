@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Camera, Check, Folder, Info, ShieldCheck, Video } from 'lucide-react';
+import { Camera, Check, Folder, ShieldCheck } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
   const [savePath, setSavePath] = useState('C:\\Users\\User\\Pictures\\LinkCam');
@@ -67,6 +67,22 @@ export const SettingsView: React.FC = () => {
                 type="checkbox"
                 checked={autoClipboard}
                 onChange={(e) => setAutoClipboard(e.target.checked)}
+                className="w-4 h-4 accent-blue-600 cursor-pointer"
+              />
+            </div>
+
+            {/* Hardware Acceleration Toggle */}
+            <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
+              <div>
+                <div className="font-medium text-slate-200">Hardware Accelerated Decoding (Direct3D 11)</div>
+                <div className="text-slate-400 mt-0.5">
+                  Uses GPU for zero-copy H.264 video decoding, reducing CPU usage to under 2%.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={hardwareAccel}
+                onChange={(e) => setHardwareAccel(e.target.checked)}
                 className="w-4 h-4 accent-blue-600 cursor-pointer"
               />
             </div>

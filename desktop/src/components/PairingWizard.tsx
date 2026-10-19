@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Check, Copy, RefreshCw, Smartphone, Usb, Wifi, Zap } from 'lucide-react';
+import { Check, Copy, RefreshCw, Usb, Wifi, Zap } from 'lucide-react';
 
 interface PairingWizardProps {
   serverPort: number;

@@ -5,6 +5,12 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-10-19
+
+### Fixed
+- **Desktop Companion Type Checking**: Fixed all TS6133 (`noUnusedLocals`) compiler errors across `CameraControls.tsx`, `CapturesGallery.tsx`, `LiveStudio.tsx`, `PairingWizard.tsx`, `QuickCaptureTray.tsx`, `SettingsView.tsx`, and `StreamHUD.tsx`. Integrated hardware-accelerated Direct3D 11 decoding toggle into Settings UI.
+- **Android Gradle Dependency Resolution**: Resolved `kotlin-stdlib:1.9.23` resolution failure by declaring `kotlin-bom:1.9.23`, adding `gradlePluginPortal()` fallback mirror in `settings.gradle.kts`, and disabling flaky HTTP keep-alive connection pooling in CI via `gradle.properties`.
+
 ## [1.0.2] - 2026-10-19
 
 ### Fixed

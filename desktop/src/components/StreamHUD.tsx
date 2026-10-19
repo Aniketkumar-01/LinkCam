@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, BatteryCharging, CheckCircle2, Gauge, Wifi, Zap } from 'lucide-react';
+import { Activity, BatteryCharging, Gauge, Wifi, Zap } from 'lucide-react';
 
 interface StreamHUDProps {
   fps: number;

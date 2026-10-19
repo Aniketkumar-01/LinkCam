@@ -63,6 +63,10 @@ android {
 }
 
 dependencies {
+    // Kotlin Standard Library BOM
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.9.23"))
+    implementation("org.jetbrains.kotlin:kotlin-stdlib")
+
     // AndroidX & Lifecycle
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")

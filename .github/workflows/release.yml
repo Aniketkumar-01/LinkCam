@@ -39,7 +39,7 @@ jobs:
       - name: Build Android APK
         run: |
           cd android
-          gradle assembleDebug --stacktrace
+          gradle assembleDebug --stacktrace --no-daemon
 
       - name: Rename APK for Release
         run: |
