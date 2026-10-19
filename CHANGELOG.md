@@ -5,6 +5,12 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-10-19
+
+### Fixed
+- **Android CI/CD SDK Setup**: Removed deprecated `android-actions/setup-android@v3` which failed on missing legacy `tools` package on modern Ubuntu runners. Configured native GitHub Actions Android SDK environment with direct license acceptance, platform preparation, and Gradle 8.4 via `gradle/actions/setup-gradle@v3`.
+- **Automatic SDK Component Resolution**: Enabled `android.builder.sdkDownload=true` in `gradle.properties`.
+
 ## [1.0.1] - 2026-10-19
 
 ### Security & Hardening
