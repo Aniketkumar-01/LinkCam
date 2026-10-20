@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.0.9",
-    [string]$Message = "Release v1.0.9: Ensure strict TypeScript compliance in Desktop UI, enable standalone GUI app, and system vcam"
+    [string]$Tag = "v1.0.10",
+    [string]$Message = "Release v1.0.10: Define missing handleOpenFolder in desktop App.tsx, standalone GUI app, and system vcam"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -27,7 +27,7 @@ Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
 Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
-git commit -m "fix(desktop): satisfy TypeScript strict mode and bump to $Tag"
+git commit -m "fix(desktop): define missing handleOpenFolder handler and bump to $Tag"
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow

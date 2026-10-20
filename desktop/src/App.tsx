@@ -73,6 +73,10 @@ export const App: React.FC = () => {
     navigator.clipboard.writeText(path);
   };
 
+  const handleOpenFolder = (path: string) => {
+    console.log('Opening folder for:', path);
+  };
+
   const handleTriggerPairingPrompt = () => {
     setPendingPairing({
       id: `req_${Date.now()}`,

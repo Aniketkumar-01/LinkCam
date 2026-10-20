@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 set TAG=%1
-if "%TAG%"=="" set TAG=v1.0.9
+if "%TAG%"=="" set TAG=v1.0.10
 
 echo ========================================================
 echo   LinkCam - Git Push and Release Automation (!TAG!)
@@ -33,7 +33,7 @@ git add .
 
 REM 5. Commit changes
 echo [*] Committing !TAG! release...
-git commit -m "fix(desktop): satisfy TypeScript strict mode and bump to !TAG!"
+git commit -m "fix(desktop): define missing handleOpenFolder handler and bump to !TAG!"
 
 REM 6. Push to main branch
 echo [*] Pushing to GitHub (main)...

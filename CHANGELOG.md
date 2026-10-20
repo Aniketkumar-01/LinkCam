@@ -5,6 +5,11 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.10] - 2026-10-20
+
+### Fixed
+- **Desktop UI Missing Handler Definition**: Implemented missing `handleOpenFolder` function in `App.tsx`, resolving `TS2304: Cannot find name 'handleOpenFolder'` during the `tsc && vite build` step.
+
 ## [1.0.9] - 2026-10-20
 
 ### Fixed
