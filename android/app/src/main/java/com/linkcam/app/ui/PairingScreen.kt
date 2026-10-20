@@ -448,34 +448,55 @@ private fun parseAndConnect(
     onConnect: (host: String, port: Int, token: String, sessionId: String) -> Unit
 ) {
     try {
+        if (qrContent.isBlank()) return
         val gson = Gson()
-        val json = gson.fromJson(qrContent, JsonObject::class.java)
+        val jsonElement = gson.fromJson(qrContent, com.google.gson.JsonElement::class.java)
+        if (!jsonElement.isJsonObject) return
+        val json = jsonElement.asJsonObject
 
-        val port = if (json.has("port")) json.get("port").asInt
-            else if (json.has("p")) json.get("p").asInt
-            else 8443
-
-        val token = if (json.has("token")) json.get("token").asString
-            else if (json.has("t")) json.get("t").asString
-            else ""
-
-        val pin = if (json.has("pin")) json.get("pin").asString else ""
-
-        val session = if (json.has("session_id")) json.get("session_id").asString
-            else if (json.has("s")) json.get("s").asString
-            else "qr_session"
-
-        val ips = if (json.has("ips")) {
-            json.getAsJsonArray("ips").map { it.asString }
-        } else {
-            emptyList()
+        val port = when {
+            json.has("port") && !json.get("port").isJsonNull -> json.get("port").asInt
+            json.has("p") && !json.get("p").isJsonNull -> json.get("p").asInt
+            else -> 8443
         }
 
-        // Connect to first non-loopback IP, or fallback to first IP
+        val token = when {
+            json.has("auth_token") && !json.get("auth_token").isJsonNull -> json.get("auth_token").asString
+            json.has("token") && !json.get("token").isJsonNull -> json.get("token").asString
+            json.has("t") && !json.get("t").isJsonNull -> json.get("t").asString
+            else -> ""
+        }
+
+        val pin = when {
+            json.has("verification_pin") && !json.get("verification_pin").isJsonNull -> json.get("verification_pin").asString
+            json.has("pin") && !json.get("pin").isJsonNull -> json.get("pin").asString
+            else -> ""
+        }
+
+        val session = when {
+            json.has("session_id") && !json.get("session_id").isJsonNull -> json.get("session_id").asString
+            json.has("sessionId") && !json.get("sessionId").isJsonNull -> json.get("sessionId").asString
+            json.has("session") && !json.get("session").isJsonNull -> json.get("session").asString
+            json.has("s") && !json.get("s").isJsonNull -> json.get("s").asString
+            else -> "qr_session"
+        }
+
+        val ips = mutableListOf<String>()
+        if (json.has("ips") && !json.get("ips").isJsonNull && json.get("ips").isJsonArray) {
+            val arr = json.getAsJsonArray("ips")
+            for (elem in arr) {
+                if (!elem.isJsonNull) {
+                    ips.add(elem.asString)
+                }
+            }
+        }
+
+        val finalToken = if (token.isNotBlank()) token else pin
         val targetIp = ips.firstOrNull { it != "127.0.0.1" } ?: ips.firstOrNull() ?: "192.168.1.1"
-        onConnect(targetIp, port, token.ifEmpty { pin }, session)
-    } catch (e: Exception) {
-        e.printStackTrace()
+
+        onConnect(targetIp, port, finalToken, session)
+    } catch (e: Throwable) {
+        android.util.Log.e("LinkCamQR", "Error parsing QR code: ${e.message}", e)
     }
 }
 
@@ -494,18 +515,17 @@ fun QrCameraScanner(
             try {
                 cameraProviderRef?.unbindAll()
                 cameraExecutor.shutdown()
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
         }
     }
 
     val handleScanned: (String) -> Unit = { raw ->
         if (!hasDetectedQr) {
             hasDetectedQr = true
-            // Immediately unbind all CameraX use cases on main thread so hardware camera 0 is released
             ContextCompat.getMainExecutor(context).execute {
                 try {
                     cameraProviderRef?.unbindAll()
-                } catch (_: Exception) {}
+                } catch (_: Throwable) {}
                 onQrScanned(raw)
             }
         }
@@ -523,27 +543,27 @@ fun QrCameraScanner(
 
             val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
             cameraProviderFuture.addListener({
-                val cameraProvider = cameraProviderFuture.get()
-                cameraProviderRef = cameraProvider
+                try {
+                    val cameraProvider = cameraProviderFuture.get()
+                    cameraProviderRef = cameraProvider
 
-                if (hasDetectedQr) {
-                    return@addListener
-                }
-
-                val preview = Preview.Builder().build().also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-
-                // Use 1280x720 for crisp QR code resolution
-                val imageAnalysis = ImageAnalysis.Builder()
-                    .setTargetResolution(Size(1280, 720))
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-                    .also { analysis ->
-                        analysis.setAnalyzer(cameraExecutor, QrBarcodeAnalyzer(handleScanned))
+                    if (hasDetectedQr) {
+                        return@addListener
                     }
 
-                try {
+                    val preview = Preview.Builder().build().also {
+                        it.setSurfaceProvider(previewView.surfaceProvider)
+                    }
+
+                    // Use 1280x720 for crisp QR code resolution
+                    val imageAnalysis = ImageAnalysis.Builder()
+                        .setTargetResolution(Size(1280, 720))
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                        .also { analysis ->
+                            analysis.setAnalyzer(cameraExecutor, QrBarcodeAnalyzer(handleScanned))
+                        }
+
                     cameraProvider.unbindAll()
                     val camera = cameraProvider.bindToLifecycle(
                         lifecycleOwner,
@@ -561,21 +581,23 @@ fun QrCameraScanner(
                             androidx.camera.core.FocusMeteringAction.FLAG_AF
                         ).build()
                         camera.cameraControl.startFocusAndMetering(action)
-                    } catch (_: Exception) {}
+                    } catch (_: Throwable) {}
 
                     // Tap to focus
                     previewView.setOnTouchListener { view, motionEvent ->
                         if (motionEvent.action == android.view.MotionEvent.ACTION_UP) {
-                            val factory = previewView.meteringPointFactory
-                            val point = factory.createPoint(motionEvent.x, motionEvent.y)
-                            val action = androidx.camera.core.FocusMeteringAction.Builder(point).build()
-                            camera.cameraControl.startFocusAndMetering(action)
-                            view.performClick()
+                            try {
+                                val factory = previewView.meteringPointFactory
+                                val point = factory.createPoint(motionEvent.x, motionEvent.y)
+                                val action = androidx.camera.core.FocusMeteringAction.Builder(point).build()
+                                camera.cameraControl.startFocusAndMetering(action)
+                                view.performClick()
+                            } catch (_: Throwable) {}
                         }
                         true
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                } catch (e: Throwable) {
+                    android.util.Log.e("LinkCamQR", "Error starting camera preview: ${e.message}", e)
                 }
             }, ContextCompat.getMainExecutor(ctx))
 
@@ -607,59 +629,72 @@ class QrBarcodeAnalyzer(
 
     override fun analyze(imageProxy: ImageProxy) {
         if (!isScanningActive.get()) {
-            imageProxy.close()
+            try { imageProxy.close() } catch (_: Throwable) {}
             return
         }
 
         val now = System.currentTimeMillis()
         if (now - lastScannedTimestamp < 2500) {
-            imageProxy.close()
+            try { imageProxy.close() } catch (_: Throwable) {}
             return
         }
 
-        val mediaImage = imageProxy.image
+        val mediaImage = try { imageProxy.image } catch (_: Throwable) { null }
         if (mediaImage != null) {
-            val rotation = imageProxy.imageInfo.rotationDegrees
-            val inputImage = InputImage.fromMediaImage(mediaImage, rotation)
+            val rotation = try { imageProxy.imageInfo.rotationDegrees } catch (_: Throwable) { 0 }
+            val inputImage = try {
+                InputImage.fromMediaImage(mediaImage, rotation)
+            } catch (_: Throwable) {
+                null
+            }
 
-            mlKitScanner.process(inputImage)
-                .addOnSuccessListener { barcodes ->
-                    var found = false
-                    for (barcode in barcodes) {
-                        val raw = barcode.rawValue
-                        if (!raw.isNullOrBlank()) {
-                            found = true
-                            lastScannedTimestamp = System.currentTimeMillis()
-                            if (isScanningActive.compareAndSet(true, false)) {
-                                onQrScanned(raw)
+            if (inputImage != null) {
+                mlKitScanner.process(inputImage)
+                    .addOnSuccessListener { barcodes ->
+                        var found = false
+                        for (barcode in barcodes) {
+                            val raw = barcode.rawValue
+                            if (!raw.isNullOrBlank()) {
+                                found = true
+                                lastScannedTimestamp = System.currentTimeMillis()
+                                if (isScanningActive.compareAndSet(true, false)) {
+                                    onQrScanned(raw)
+                                }
+                                break
                             }
-                            break
+                        }
+                        if (!found && isScanningActive.get()) {
+                            tryZxingDecode(imageProxy)
                         }
                     }
-                    if (!found && isScanningActive.get()) {
-                        tryZxingDecode(imageProxy)
+                    .addOnFailureListener {
+                        if (isScanningActive.get()) {
+                            tryZxingDecode(imageProxy)
+                        }
                     }
-                }
-                .addOnFailureListener {
-                    if (isScanningActive.get()) {
-                        tryZxingDecode(imageProxy)
+                    .addOnCompleteListener {
+                        try { imageProxy.close() } catch (_: Throwable) {}
                     }
+            } else {
+                if (isScanningActive.get()) {
+                    tryZxingDecode(imageProxy)
                 }
-                .addOnCompleteListener {
-                    imageProxy.close()
-                }
+                try { imageProxy.close() } catch (_: Throwable) {}
+            }
         } else {
             if (isScanningActive.get()) {
                 tryZxingDecode(imageProxy)
             }
-            imageProxy.close()
+            try { imageProxy.close() } catch (_: Throwable) {}
         }
     }
 
     private fun tryZxingDecode(imageProxy: ImageProxy) {
         try {
-            val plane = imageProxy.planes[0]
-            val buffer = plane.buffer
+            val planes = imageProxy.planes
+            if (planes.isNullOrEmpty()) return
+            val plane = planes[0] ?: return
+            val buffer = plane.buffer ?: return
             val bytes = ByteArray(buffer.remaining())
             buffer.get(bytes)
 
@@ -679,8 +714,8 @@ class QrBarcodeAnalyzer(
                     onQrScanned(result.text)
                 }
             }
-        } catch (_: Exception) {
-            // Frame does not contain QR
+        } catch (_: Throwable) {
+            // Frame does not contain QR or is unreadable
         }
     }
 }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Check, Copy, RefreshCw, ShieldCheck, Usb, Wifi, Zap, Smartphone, ArrowRight } from 'lucide-react';
+import { invokeTauri } from '../tauriApi';
 
 interface PairingWizardProps {
   serverPort: number;
@@ -13,9 +14,9 @@ interface PairingWizardProps {
 }
 
 interface AdbDevice {
-  serial: String;
-  model: String;
-  status: String;
+  serial: string;
+  model: string;
+  status: string;
   is_trusted: boolean;
 }
 
@@ -34,12 +35,20 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
   const [usbStatusMsg, setUsbStatusMsg] = useState<string | null>(null);
   const [isPushingToken, setIsPushingToken] = useState(false);
 
+  const cleanSessionId = sessionId || 'default_session';
   const pairingData = JSON.stringify({
     port: serverPort,
+    p: serverPort,
     ips: availableIps,
     token: sessionToken,
-    session_id: sessionId || 'default_session',
+    auth_token: sessionToken,
+    t: sessionToken,
+    session_id: cleanSessionId,
+    s: cleanSessionId,
     pin: verificationPin,
+    verification_pin: verificationPin,
+    cert_fp: 'SHA256:4a:3b:2c:1d:linkcam:v1.1',
+    fp: 'SHA256:4a:3b:2c:1d:linkcam:v1.1',
   });
 
   const copyPairingCode = () => {
@@ -54,19 +63,15 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
 
     const checkAdb = async () => {
       try {
-        // @ts-ignore
-        if (window.__TAURI__?.core?.invoke) {
-          // @ts-ignore
-          const devs = await window.__TAURI__.core.invoke('get_adb_devices');
-          setAdbDevices(devs || []);
-        }
+        const devs = await invokeTauri<AdbDevice[]>('get_adb_devices');
+        setAdbDevices(devs || []);
       } catch {
-        // Ignore in browser mock mode
+        // Fallback for browser mock mode
       }
     };
 
     checkAdb();
-    const interval = setInterval(checkAdb, 3000);
+    const interval = setInterval(checkAdb, 2500);
     return () => clearInterval(interval);
   }, [activeMode]);
 
@@ -74,18 +79,14 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
     setIsPushingToken(true);
     setUsbStatusMsg(null);
     try {
-      // @ts-ignore
-      if (window.__TAURI__?.core?.invoke) {
-        // @ts-ignore
-        await window.__TAURI__.core.invoke('trust_adb_device', { serial });
-        // @ts-ignore
-        const res = await window.__TAURI__.core.invoke('pair_adb_device', { serial });
-        setUsbStatusMsg(res || 'One-time secure USB token pushed to phone!');
-      } else {
-        setUsbStatusMsg(`Mock: Trusted & pushed USB token to ${serial}`);
-      }
+      await invokeTauri('trust_adb_device', { serial });
+      const res = await invokeTauri<string>('pair_adb_device', { serial });
+      setUsbStatusMsg(res || 'One-time secure USB token pushed to phone!');
+      // Refresh list to update trust badge
+      const devs = await invokeTauri<AdbDevice[]>('get_adb_devices');
+      setAdbDevices(devs || []);
     } catch (e: any) {
-      setUsbStatusMsg(`Error: ${e?.toString() || 'Failed to authorize device'}`);
+      setUsbStatusMsg(`Error: ${e?.message || e?.toString() || 'Failed to authorize device'}`);
     } finally {
       setIsPushingToken(false);
     }
@@ -103,16 +104,12 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
     setIsPushingToken(true);
     setUsbStatusMsg(null);
     try {
-      // @ts-ignore
-      if (window.__TAURI__?.core?.invoke) {
-        // @ts-ignore
-        const res = await window.__TAURI__.core.invoke('manual_usb_pair');
-        setUsbStatusMsg(res || 'Port 8443 reversed & USB pairing token sent to phone!');
-      } else {
-        setUsbStatusMsg('Mock: Reversed port 8443 and pushed pairing token!');
-      }
+      const res = await invokeTauri<string>('manual_usb_pair');
+      setUsbStatusMsg(res || 'Port 8443 reversed & USB pairing token sent to phone!');
+      const devs = await invokeTauri<AdbDevice[]>('get_adb_devices');
+      setAdbDevices(devs || []);
     } catch (e: any) {
-      setUsbStatusMsg(`Error: ${e?.toString() || 'Failed to execute adb reverse'}`);
+      setUsbStatusMsg(`Error: ${e?.message || e?.toString() || 'Failed to execute adb reverse'}`);
     } finally {
       setIsPushingToken(false);
     }
@@ -120,12 +117,8 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
 
   const checkAdbNow = async () => {
     try {
-      // @ts-ignore
-      if (window.__TAURI__?.core?.invoke) {
-        // @ts-ignore
-        const devs = await window.__TAURI__.core.invoke('get_adb_devices');
-        setAdbDevices(devs || []);
-      }
+      const devs = await invokeTauri<AdbDevice[]>('get_adb_devices');
+      setAdbDevices(devs || []);
     } catch {
       // Ignore
     }

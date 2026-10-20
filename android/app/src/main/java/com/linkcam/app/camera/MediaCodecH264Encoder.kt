@@ -51,7 +51,13 @@ class MediaCodecH264Encoder(
             }
 
             val encoder = MediaCodec.createEncoderByType(MIME_TYPE)
-            encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            try {
+                encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            } catch (e: Exception) {
+                Log.w(TAG, "Hardware encoder rejected CBR mode, falling back to VBR: ${e.message}")
+                format.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+                encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            }
             inputSurface = encoder.createInputSurface()
             encoder.start()
             codec = encoder

@@ -277,10 +277,16 @@ class MainActivity : ComponentActivity() {
             )
         }
 
-        activePreviewSurface?.let {
-            cameraStreamer?.setPreviewSurface(it)
+        // Give CameraX 350ms to cleanly close hardware camera sensor before Camera2 opens it
+        lifecycleScope.launch {
+            kotlinx.coroutines.delay(350)
+            if (isConnectedState.value) {
+                activePreviewSurface?.let {
+                    cameraStreamer?.setPreviewSurface(it)
+                }
+                cameraStreamer?.start()
+            }
         }
-        cameraStreamer?.start()
 
         // Wire ABR quality governor
         if (abrController == null) {

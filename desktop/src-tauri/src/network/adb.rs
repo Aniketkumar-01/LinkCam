@@ -12,12 +12,28 @@ pub struct AdbDeviceInfo {
 pub struct AdbManager;
 
 impl AdbManager {
+    fn create_command(program: &str) -> Command {
+        #[allow(unused_mut)]
+        let mut cmd = Command::new(program);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        cmd
+    }
+
     /// Locate adb binary: checks system PATH, ANDROID_HOME, LocalAppData Android Sdk, and bundled paths
     pub fn locate_adb() -> String {
         // 1. Check system PATH first
-        if let Ok(output) = Command::new("adb").arg("version").output() {
+        if let Ok(output) = Self::create_command("adb").arg("version").output() {
             if output.status.success() {
                 return "adb".to_string();
+            }
+        }
+        if let Ok(output) = Self::create_command("adb.exe").arg("version").output() {
+            if output.status.success() {
+                return "adb.exe".to_string();
             }
         }
 
@@ -67,7 +83,7 @@ impl AdbManager {
     /// List connected adb devices
     pub fn list_devices() -> Result<Vec<AdbDeviceInfo>, String> {
         let adb = Self::locate_adb();
-        let output = Command::new(&adb)
+        let output = Self::create_command(&adb)
             .args(["devices", "-l"])
             .output()
             .map_err(|e| format!("Failed to execute adb: {}. Ensure adb is installed or phone is connected via USB.", e))?;
@@ -78,10 +94,17 @@ impl AdbManager {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut devices = Vec::new();
+        let mut in_device_list = false;
 
-        for line in stdout.lines().skip(1) {
+        for line in stdout.lines() {
             let line = line.trim();
-            if line.is_empty() {
+            if line.starts_with("List of devices attached") {
+                in_device_list = true;
+                continue;
+            }
+
+            // Only parse lines after the header and skip daemon logs or blank lines
+            if !in_device_list || line.is_empty() || line.starts_with('*') {
                 continue;
             }
 
@@ -112,7 +135,7 @@ impl AdbManager {
     /// Over USB, all video, control, and telemetry flow through the TCP-framed connection on port 8443.
     pub fn setup_reverse(serial: Option<&str>, port: u16) -> Result<(), String> {
         let adb = Self::locate_adb();
-        let mut cmd = Command::new(&adb);
+        let mut cmd = Self::create_command(&adb);
         if let Some(s) = serial {
             if !s.is_empty() {
                 cmd.args(["-s", s]);
@@ -140,13 +163,14 @@ impl AdbManager {
         port: u16,
     ) -> Result<(), String> {
         let adb = Self::locate_adb();
-        let mut cmd = Command::new(&adb);
+        let mut cmd = Self::create_command(&adb);
         if !serial.is_empty() {
             cmd.args(["-s", serial]);
         }
         cmd.args([
             "shell", "am", "start",
             "-n", "com.linkcam.app/.ui.MainActivity",
+            "-f", "0x20000000",
             "--es", "usb_token", token,
             "--es", "session_id", session_id,
             "--es", "cert_fp", cert_fp,

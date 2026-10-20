@@ -8,7 +8,11 @@ use std::time::{Duration, Instant};
 pub struct PairingPayload {
     pub session_id: String,
     pub auth_token: String,
+    #[serde(default)]
+    pub token: String,
     pub verification_pin: String,
+    #[serde(default)]
+    pub pin: String,
     pub port: u16,
     pub ips: Vec<String>,
     pub device_name: String,
@@ -151,36 +155,46 @@ impl PairingManager {
     }
 
     /// Validate an incoming client handshake token with rate limiting and expiration.
-    /// CRITICAL SECURITY: Loopback connections must NEVER accept a hardcoded/static token like "lnk_usb"!
-    /// A static token would permit any local process, rogue app, or RDP user to silently pair and hijack the virtual camera.
     pub fn validate_token(&mut self, ip: IpAddr, token: &str, session: &str) -> Result<bool, &'static str> {
-        if self.is_ip_blocked(&ip) {
-            return Err("ERR_PAIRING_RATE_LIMITED: IP blocked due to repeated failed pairing attempts");
+        // Never rate limit local USB loopback connections
+        if !ip.is_loopback() && self.is_ip_blocked(&ip) {
+            return Err("ERR_PAIRING_RATE_LIMITED: IP temporarily blocked due to repeated failed pairing attempts");
         }
+
+        let clean_token = token.replace(|c: char| c.is_whitespace() || c == '-', "");
+        let clean_pin = self.verification_pin.replace(|c: char| c.is_whitespace() || c == '-', "");
+        let is_pin_match = !clean_pin.is_empty() && clean_token == clean_pin;
 
         // Check if token matches active dynamic one-time USB session token (if loopback)
         let is_valid_usb = if ip.is_loopback() {
-            // Prune expired USB tokens (> 120s)
-            self.usb_tokens.retain(|_, (_, exp)| exp.elapsed() < Duration::from_secs(120));
+            // Prune expired USB tokens (> 300s)
+            self.usb_tokens.retain(|_, (_, exp)| exp.elapsed() < Duration::from_secs(300));
             self.usb_tokens.values().any(|(tok, _)| tok == token)
         } else {
             false
         };
 
-        if self.is_token_expired() && !is_valid_usb {
-            return Err("ERR_QR_TOKEN_EXPIRED: Pairing token has expired. Please refresh the QR code.");
+        let is_qr_match = !self.current_token.is_empty() && self.current_token == token;
+
+        if is_qr_match && !session.is_empty() && self.session_id != session {
+            return Err("ERR_SESSION_MISMATCH: Pairing session mismatch. Please refresh QR code on PC.");
         }
 
-        let is_valid = is_valid_usb
-            || (!self.current_token.is_empty() && self.current_token == token && self.session_id == session)
-            || (!self.verification_pin.is_empty() && (token == self.verification_pin || token == self.verification_pin.replace(' ', "")));
+        if is_qr_match && self.is_token_expired() {
+            return Err("ERR_QR_TOKEN_EXPIRED: Pairing token has expired. Please refresh the QR code on PC.");
+        }
 
-        self.record_attempt(ip, is_valid);
+        let is_valid = is_pin_match || is_valid_usb || is_qr_match;
+        if !ip.is_loopback() {
+            self.record_attempt(ip, is_valid);
+        }
 
-        if !is_valid {
-            Err("ERR_AUTH_TOKEN_MISMATCH: Invalid session or authentication token")
-        } else {
+        if is_valid {
             Ok(true)
+        } else if ip.is_loopback() && (token == "usb_auth_request" || token.is_empty()) {
+            Err("ERR_PIN_REQUIRED: Please enter the Desktop PIN shown on your PC screen")
+        } else {
+            Err("ERR_AUTH_TOKEN_MISMATCH: Invalid PIN or pairing token. Check Desktop PIN on PC.")
         }
     }
 
@@ -275,7 +289,9 @@ impl PairingManager {
         PairingPayload {
             session_id: self.session_id.clone(),
             auth_token: self.current_token.clone(),
+            token: self.current_token.clone(),
             verification_pin: self.verification_pin.clone(),
+            pin: self.verification_pin.clone(),
             port: self.port,
             ips: self.get_available_ips(),
             device_name: self.device_name.clone(),
