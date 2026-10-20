@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.16] - 2026-10-20
 
 ### Fixed
-- **Windows DPAPI E0432 Compiler Fix**: Corrected unresolved import `CRYPTOAPI_BLOB` to `CRYPT_INTEGER_BLOB` in `desktop/src-tauri/src/network/dpapi.rs`, complying with `windows` crate `0.52.0` Win32 Cryptography type definitions.
-- **Rust Compiler Warning Cleanup**: Eliminated 12 unused import and unused mutability warnings across `receiver.rs`, `capture/mod.rs`, `session.rs`, `udp_server.rs`, `network/mod.rs`, `frame_sink.rs`, `server.rs`, and `main.rs`, ensuring a zero-warning clean compilation in CI.
+- **Windows DPAPI E0432 & E0282 Compiler Fix**: Corrected unresolved import `CRYPTOAPI_BLOB` to `CRYPT_INTEGER_BLOB` and explicitly typed `LocalFree(HLOCAL(...))` in `desktop/src-tauri/src/network/dpapi.rs`, satisfying `windows` crate `0.52.0` generic `IntoParam<HLOCAL>` type inference.
+- **Rust Compiler Warning Cleanup**: Eliminated unused import and unused mutability warnings across `receiver.rs`, `capture/mod.rs`, `session.rs`, `udp_server.rs`, `network/mod.rs`, `frame_sink.rs`, `server.rs`, and `main.rs`, ensuring a zero-warning clean compilation in CI.
 
 ## [1.0.15] - 2026-10-20
 

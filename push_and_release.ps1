@@ -1,6 +1,6 @@
 param(
     [string]$Tag = "v1.0.16",
-    [string]$Message = "Release v1.0.16: Fix DPAPI CRYPT_INTEGER_BLOB compilation and clean compiler warnings"
+    [string]$Message = "Release v1.0.16: Fix DPAPI LocalFree type inference and clean compiler warnings"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -27,7 +27,7 @@ Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
 Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
-git commit -m "fix(desktop): resolve DPAPI CRYPT_INTEGER_BLOB compilation and clean warnings ($Tag)"
+git commit -m "fix(desktop): resolve DPAPI LocalFree type inference and clean warnings ($Tag)"
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow

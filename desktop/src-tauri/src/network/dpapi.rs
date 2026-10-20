@@ -13,6 +13,7 @@ fn get_trusted_store_path() -> PathBuf {
 
 #[cfg(windows)]
 pub fn encrypt_bytes(plaintext: &[u8]) -> Result<Vec<u8>, String> {
+    use windows::Win32::Foundation::HLOCAL;
     use windows::Win32::Security::Cryptography::{
         CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     };
@@ -37,7 +38,7 @@ pub fn encrypt_bytes(plaintext: &[u8]) -> Result<Vec<u8>, String> {
 
         let slice = std::slice::from_raw_parts(out_blob.pbData, out_blob.cbData as usize);
         let result = slice.to_vec();
-        windows::Win32::Foundation::LocalFree(out_blob.pbData as _);
+        let _ = windows::Win32::Foundation::LocalFree(HLOCAL(out_blob.pbData as _));
         Ok(result)
     }
 }
@@ -50,6 +51,7 @@ pub fn encrypt_bytes(plaintext: &[u8]) -> Result<Vec<u8>, String> {
 
 #[cfg(windows)]
 pub fn decrypt_bytes(ciphertext: &[u8]) -> Result<Vec<u8>, String> {
+    use windows::Win32::Foundation::HLOCAL;
     use windows::Win32::Security::Cryptography::{
         CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     };
@@ -74,7 +76,7 @@ pub fn decrypt_bytes(ciphertext: &[u8]) -> Result<Vec<u8>, String> {
 
         let slice = std::slice::from_raw_parts(out_blob.pbData, out_blob.cbData as usize);
         let result = slice.to_vec();
-        windows::Win32::Foundation::LocalFree(out_blob.pbData as _);
+        let _ = windows::Win32::Foundation::LocalFree(HLOCAL(out_blob.pbData as _));
         Ok(result)
     }
 }

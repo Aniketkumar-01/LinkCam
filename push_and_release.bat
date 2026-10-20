@@ -33,7 +33,7 @@ git add .
 
 REM 5. Commit changes
 echo [*] Committing !TAG! release...
-git commit -m "fix(desktop): resolve DPAPI CRYPT_INTEGER_BLOB compilation and clean warnings (!TAG!)"
+git commit -m "fix(desktop): resolve DPAPI LocalFree type inference and clean warnings (!TAG!)"
 
 REM 6. Push to main branch
 echo [*] Pushing to GitHub (main)...
