@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.0.17",
-    [string]$Message = "Release v1.0.17: Real camera preview, live QR pairing, real telemetry, and folder picker"
+    [string]$Tag = "v1.2.0",
+    [string]$Message = "Release v1.2.0: DirectShow COM filter compilation, signed Android release, and transport encryption"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -27,7 +27,7 @@ Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
 Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
-git commit -m "feat: real camera preview, live QR pairing, real telemetry, and folder picker ($Tag)"
+git commit -m "release: $Tag - DirectShow COM filter build, signed Android release, and transport encryption"
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow

@@ -1,6 +1,6 @@
 ; Inno Setup Script for LinkCam Windows Companion
 #define MyAppName "LinkCam"
-#define MyAppVersion "1.0.17"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "LinkCam Team"
 #define MyAppURL "https://github.com/Aniketkumar-01/LinkCam"
 #define MyAppExeName "linkcam-desktop.exe"
@@ -32,6 +32,7 @@ Name: "startupicon"; Description: "Launch LinkCam automatically on Windows start
 
 [Files]
 Source: "src-tauri\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "src-tauri\target\release\LinkCamDShow64.dll"; DestDir: "{app}"; Flags: ignoreversion regserver
 Source: "dist\*"; DestDir: "{app}\dist"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

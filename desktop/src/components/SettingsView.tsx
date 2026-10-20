@@ -1,43 +1,78 @@
-import React, { useState } from 'react';
-import { Camera, Check, Clipboard, Folder, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { AlertCircle, Camera, Check, Clipboard, Folder, ShieldCheck } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
-  const [savePath, setSavePath] = useState(() => {
-    return localStorage.getItem('linkcam_save_destination') || 'C:\\Users\\User\\Pictures\\LinkCam';
-  });
+  const [savePath, setSavePath] = useState('');
   const [vcamEnabled, setVcamEnabled] = useState(true);
   const [hardwareAccel, setHardwareAccel] = useState(true);
   const [autoClipboard, setAutoClipboard] = useState(true);
-  const [savedNotice, setSavedNotice] = useState(false);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const updateSavePath = (path: string) => {
+  // Load save destination from Tauri Rust backend on mount
+  useEffect(() => {
+    const loadDestination = async () => {
+      try {
+        // @ts-ignore
+        if (window.__TAURI__?.core?.invoke) {
+          // @ts-ignore
+          const dir = await window.__TAURI__.core.invoke('get_save_destination');
+          if (dir) {
+            setSavePath(dir);
+            return;
+          }
+        }
+      } catch {
+        // Fallback to local default
+      }
+      setSavePath('C:\\Users\\User\\Pictures\\LinkCam');
+    };
+
+    loadDestination();
+  }, []);
+
+  const updateSavePath = async (path: string) => {
+    setErrorMessage(null);
     setSavePath(path);
-    localStorage.setItem('linkcam_save_destination', path);
-    setSavedNotice(true);
-    setTimeout(() => setSavedNotice(false), 2000);
+
+    try {
+      // @ts-ignore
+      if (window.__TAURI__?.core?.invoke) {
+        // @ts-ignore
+        const validatedPath = await window.__TAURI__.core.invoke('set_save_destination', { path });
+        setSavePath(validatedPath);
+        setSavedNotice('Validated and saved to system configuration');
+        setTimeout(() => setSavedNotice(null), 3000);
+      } else {
+        localStorage.setItem('linkcam_save_destination', path);
+        setSavedNotice('Saved to preferences');
+        setTimeout(() => setSavedNotice(null), 2000);
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.toString() || 'Failed to update destination');
+    }
   };
 
   const handlePasteClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText();
       if (text && text.trim().length > 0) {
-        updateSavePath(text.trim());
+        await updateSavePath(text.trim());
       }
     } catch {
       // Fallback
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
       const file = files[0];
-      // On webkitRelativePath, directory name can be extracted
       const relPath = file.webkitRelativePath;
       if (relPath) {
         const dirName = relPath.split('/')[0];
-        updateSavePath(`C:\\Users\\User\\Pictures\\${dirName}`);
+        await updateSavePath(`C:\\Users\\User\\Pictures\\${dirName}`);
       }
     }
   };
@@ -47,7 +82,7 @@ export const SettingsView: React.FC = () => {
       <div>
         <h2 className="text-xl font-semibold text-slate-100 tracking-tight">Settings & Preferences</h2>
         <p className="text-sm text-slate-400 mt-1">
-          Configure Windows Virtual Camera system integration and file storage.
+          Configure Windows Virtual Camera system integration and secure file storage.
         </p>
       </div>
 
@@ -87,7 +122,7 @@ export const SettingsView: React.FC = () => {
 
         {/* Capture Delivery Options */}
         <div className="fluent-card p-6 rounded-2xl space-y-4">
-          <h3 className="text-sm font-semibold text-slate-100">Instant Capture Delivery</h3>
+          <h3 className="text-sm font-semibold text-slate-100">Instant Capture Delivery & Storage Security</h3>
 
           <div className="space-y-4 text-xs">
             {/* Auto Clipboard Toggle */}
@@ -125,10 +160,16 @@ export const SettingsView: React.FC = () => {
             {/* Folder Destination */}
             <div className="pt-3 border-t border-white/[0.06] space-y-1.5">
               <div className="flex items-center justify-between">
-                <div className="font-medium text-slate-200">Save Destination</div>
+                <div className="font-medium text-slate-200">Backend-Validated Save Destination</div>
                 {savedNotice && (
                   <span className="text-[11px] text-emerald-400 font-medium animate-pulse">
-                    Saved to preferences
+                    {savedNotice}
+                  </span>
+                )}
+                {errorMessage && (
+                  <span className="text-[11px] text-rose-400 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    {errorMessage}
                   </span>
                 )}
               </div>
@@ -136,7 +177,13 @@ export const SettingsView: React.FC = () => {
                 <input
                   type="text"
                   value={savePath}
-                  onChange={(e) => updateSavePath(e.target.value)}
+                  onChange={(e) => setSavePath(e.target.value)}
+                  onBlur={(e) => updateSavePath(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      updateSavePath((e.target as HTMLInputElement).value);
+                    }
+                  }}
                   onPaste={(e) => {
                     const text = e.clipboardData.getData('text');
                     if (text) {
@@ -180,6 +227,9 @@ export const SettingsView: React.FC = () => {
                   style={{ display: 'none' }}
                 />
               </div>
+              <p className="text-[11px] text-slate-400">
+                Destination is strictly validated by the Rust backend: protected system folders and path traversal attempts are blocked.
+              </p>
             </div>
           </div>
         </div>
@@ -191,7 +241,7 @@ export const SettingsView: React.FC = () => {
             <span>Local & Offline Privacy Guarantee</span>
           </div>
           <p className="text-slate-400 leading-relaxed">
-            LinkCam operates 100% locally on your local network, direct mobile hotspot, or USB cable. No video frames, audio, or document captures are ever routed through external servers or stored in the cloud.
+            LinkCam operates 100% locally on your local network, direct mobile hotspot, or USB cable. Captured file names are generated on the desktop to prevent malicious naming, and no data ever leaves your computer.
           </p>
         </div>
       </div>

@@ -90,5 +90,20 @@ class DocumentScanner {
             fileBytes = fileBytes,
             sha256Checksum = checksum
         )
+    companion object {
+        /**
+         * Checks whether Google Play Services is available and operational on this device.
+         * On Xiaomi HyperOS / China ROMs / de-Googled devices, this returns false, triggering
+         * LinkCam's offline CameraX edge-crop and PDF generator fallback.
+         */
+        fun isGooglePlayServicesAvailable(context: android.content.Context): Boolean {
+            return try {
+                val availability = com.google.android.gms.common.GoogleApiAvailability.getInstance()
+                val resultCode = availability.isGooglePlayServicesAvailable(context)
+                resultCode == com.google.android.gms.common.ConnectionResult.SUCCESS
+            } catch (e: Throwable) {
+                false
+            }
+        }
     }
 }

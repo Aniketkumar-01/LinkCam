@@ -37,10 +37,15 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
-      - name: Build Android APK
+      - name: Build Android Release APK
         run: |
           cd android
-          gradle assembleDebug --stacktrace --no-daemon 2>&1 | tee ../build.log
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.jks
+          else
+            keytool -genkeypair -v -keystore release.jks -alias linkcam -keyalg RSA -keysize 2048 -validity 10000 -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'linkcam_release' }}" -keypass "${{ secrets.ANDROID_KEY_PASSWORD || 'linkcam_release' }}" -dname "CN=LinkCam, OU=Engineering, O=LinkCam, C=US"
+          fi
+          gradle assembleRelease --stacktrace --no-daemon 2>&1 | tee ../build.log
 
       - name: Dump Failure Logs on Error
         if: failure()
@@ -51,12 +56,15 @@ jobs:
       - name: Rename APK for Release
         run: |
           mkdir -p artifacts
-          if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            echo "Found debug APK: android/app/build/outputs/apk/debug/app-debug.apk"
-            cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/LinkCam-Android.apk
+          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
+            echo "Found signed release APK: android/app/build/outputs/apk/release/app-release.apk"
+            cp android/app/build/outputs/apk/release/app-release.apk artifacts/LinkCam-Android.apk
           elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
             echo "Found unsigned release APK: android/app/build/outputs/apk/release/app-release-unsigned.apk"
             cp android/app/build/outputs/apk/release/app-release-unsigned.apk artifacts/LinkCam-Android.apk
+          elif [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
+            echo "Found debug fallback APK: android/app/build/outputs/apk/debug/app-debug.apk"
+            cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/LinkCam-Android.apk
           else
             echo "Searching for any generated APK in android/app/build..."
             APK_FILE=$(find android/app/build -type f -name "*.apk" | head -n 1)
@@ -115,6 +123,15 @@ jobs:
       - name: Build Desktop Companion (Rust / Tauri)
         run: |
           cargo build --release --manifest-path desktop/src-tauri/Cargo.toml --verbose
+
+      - name: Build DirectShow Virtual Camera Filter (64-bit DLL)
+        shell: pwsh
+        run: |
+          cmake -B desktop/vcam-dshow/build -S desktop/vcam-dshow -A x64
+          cmake --build desktop/vcam-dshow/build --config Release
+          New-Item -ItemType Directory -Force -Path "desktop/src-tauri/target/release"
+          Copy-Item "desktop/vcam-dshow/build/Release/LinkCamDShow64.dll" "desktop/src-tauri/target/release/LinkCamDShow64.dll"
+          Write-Host "Successfully compiled and staged LinkCamDShow64.dll"
 
       - name: Build Windows Setup Installer
         shell: pwsh

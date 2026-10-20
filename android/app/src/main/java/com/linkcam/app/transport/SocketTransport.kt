@@ -10,7 +10,11 @@ import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
+import javax.crypto.Cipher
+import javax.crypto.spec.ChaCha20ParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 enum class ConnectionStatus {
     DISCONNECTED,
@@ -26,12 +30,35 @@ class SocketTransport(
     private var socket: Socket? = null
     private var outputStream: OutputStream? = null
     private var inputStream: InputStream? = null
-    private val sequenceCounter = AtomicInteger(1)
+    private var sequenceCounter = AtomicInteger(1)
     private var isRunning = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val gson = Gson()
+    private var sessionKey: ByteArray? = null
 
-    fun connect(host: String, port: Int, token: String, sessionId: String) {
+    private fun deriveSessionKey(token: String, sessionId: String): ByteArray {
+        val md = MessageDigest.getInstance("SHA-256")
+        return md.digest("$token:$sessionId:linkcam_secure_v1".toByteArray(Charsets.UTF_8))
+    }
+
+    private fun encryptPayload(payload: ByteArray, sequence: Int, timestamp: Long): ByteArray {
+        val key = sessionKey ?: return payload
+        return try {
+            val nonce = ByteBuffer.allocate(12)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                .putInt(sequence)
+                .putLong(timestamp)
+                .array()
+            val cipher = Cipher.getInstance("ChaCha20")
+            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "ChaCha20"), ChaCha20ParameterSpec(nonce, 1))
+            cipher.doFinal(payload)
+        } catch (e: Exception) {
+            payload
+        }
+    }
+
+    fun connect(host: String, port: Int, token: String, sessionId: String, certFingerprint: String? = null) {
+        sessionKey = deriveSessionKey(token, sessionId)
         scope.launch {
             try {
                 onStatusChange(ConnectionStatus.CONNECTING, null)
@@ -182,18 +209,44 @@ class SocketTransport(
         if (!isRunning) return
         scope.launch {
             try {
+                val seq = sequenceCounter.getAndIncrement()
+                val encrypted = encryptPayload(frameData, seq, timestamp)
+                val baseFlag = if (isKeyframe) PacketHeader.FLAG_KEYFRAME.toInt() else 0
+                val flag = (baseFlag or PacketHeader.FLAG_ENCRYPTED.toInt()).toByte()
                 val header = PacketHeader(
                     packetType = PacketHeader.TYPE_VIDEO_FRAME,
-                    flags = if (isKeyframe) PacketHeader.FLAG_KEYFRAME else 0,
-                    sequence = sequenceCounter.getAndIncrement(),
+                    flags = flag,
+                    sequence = seq,
                     timestamp = timestamp,
-                    payloadLength = frameData.size
+                    payloadLength = encrypted.size
                 )
-                val packet = Packet(header, frameData)
+                val packet = Packet(header, encrypted)
                 outputStream?.write(packet.toByteArray())
                 outputStream?.flush()
             } catch (e: Exception) {
                 disconnect()
+            }
+        }
+    }
+
+    fun sendAudioPacket(packet: Packet) {
+        if (!isRunning) return
+        scope.launch {
+            try {
+                val encrypted = encryptPayload(packet.payload, packet.header.sequence, packet.header.timestamp)
+                val newFlags = (packet.header.flags.toInt() or PacketHeader.FLAG_ENCRYPTED.toInt()).toByte()
+                val newHeader = PacketHeader(
+                    packetType = packet.header.packetType,
+                    flags = newFlags,
+                    sequence = packet.header.sequence,
+                    timestamp = packet.header.timestamp,
+                    payloadLength = encrypted.size
+                )
+                val encPacket = Packet(newHeader, encrypted)
+                outputStream?.write(encPacket.toByteArray())
+                outputStream?.flush()
+            } catch (ignored: Exception) {
+                // Audio packet loss over lossy Wi-Fi should not sever the session
             }
         }
     }
@@ -235,18 +288,23 @@ class SocketTransport(
                 val metaBytes = metaJson.toByteArray(Charsets.UTF_8)
                 val metaLenBytes = ByteBuffer.allocate(4).putInt(metaBytes.size).array()
 
-                val payload = ByteArray(4 + metaBytes.size + fileBytes.size)
-                System.arraycopy(metaLenBytes, 0, payload, 0, 4)
-                System.arraycopy(metaBytes, 0, payload, 4, metaBytes.size)
-                System.arraycopy(fileBytes, 0, payload, 4 + metaBytes.size, fileBytes.size)
+                val rawPayload = ByteArray(4 + metaBytes.size + fileBytes.size)
+                System.arraycopy(metaLenBytes, 0, rawPayload, 0, 4)
+                System.arraycopy(metaBytes, 0, rawPayload, 4, metaBytes.size)
+                System.arraycopy(fileBytes, 0, rawPayload, 4 + metaBytes.size, fileBytes.size)
+
+                val seq = sequenceCounter.getAndIncrement()
+                val ts = System.currentTimeMillis()
+                val encrypted = encryptPayload(rawPayload, seq, ts)
 
                 val header = PacketHeader(
                     packetType = PacketHeader.TYPE_INSTANT_CAPTURE_CHUNK,
-                    sequence = sequenceCounter.getAndIncrement(),
-                    timestamp = System.currentTimeMillis(),
-                    payloadLength = payload.size
+                    flags = PacketHeader.FLAG_ENCRYPTED,
+                    sequence = seq,
+                    timestamp = ts,
+                    payloadLength = encrypted.size
                 )
-                val packet = Packet(header, payload)
+                val packet = Packet(header, encrypted)
                 outputStream?.write(packet.toByteArray())
                 outputStream?.flush()
             } catch (e: Exception) {

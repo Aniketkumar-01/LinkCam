@@ -4,8 +4,8 @@ mod capture;
 mod network;
 mod vcam;
 
-use capture::CaptureReceiver;
-use network::{NetworkServer, PairingPayload, UdpVideoServer};
+use capture::{CaptureReceiver, CaptureStorage};
+use network::{AdbDeviceInfo, AdbManager, NetworkServer, PairingPayload, UdpVideoServer};
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -77,6 +77,58 @@ async fn get_connection_status(server: tauri::State<'_, Arc<NetworkServer>>) -> 
     }
 }
 
+#[tauri::command]
+async fn get_save_destination(storage: tauri::State<'_, Arc<CaptureStorage>>) -> Result<String, String> {
+    Ok(storage.get_base_dir().to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn set_save_destination(storage: tauri::State<'_, Arc<CaptureStorage>>, path: String) -> Result<String, String> {
+    storage.set_base_dir(&path)
+}
+
+#[tauri::command]
+async fn get_adb_devices(server: tauri::State<'_, Arc<NetworkServer>>) -> Result<Vec<AdbDeviceInfo>, String> {
+    let mut devices = AdbManager::list_devices()?;
+    let mgr = server.get_pairing_manager();
+    let pm = mgr.read().await;
+    for dev in &mut devices {
+        dev.is_trusted = pm.is_device_trusted(&dev.serial);
+    }
+    Ok(devices)
+}
+
+#[tauri::command]
+async fn trust_adb_device(server: tauri::State<'_, Arc<NetworkServer>>, serial: String) -> Result<(), String> {
+    let mgr = server.get_pairing_manager();
+    let mut pm = mgr.write().await;
+    pm.trust_adb_device(&serial);
+    println!("[LinkCam] User authorized and trusted USB device: {}", serial);
+    Ok(())
+}
+
+#[tauri::command]
+async fn pair_adb_device(server: tauri::State<'_, Arc<NetworkServer>>, serial: String) -> Result<String, String> {
+    let mgr = server.get_pairing_manager();
+    let mut pm = mgr.write().await;
+
+    if !pm.is_device_trusted(&serial) {
+        return Err("ERR_USB_NOT_TRUSTED: This USB device must be explicitly trusted by user before pairing".to_string());
+    }
+
+    // Configure ADB reverse port forwarding strictly for TCP port 8443
+    AdbManager::setup_reverse(Some(&serial), 8443)?;
+
+    // Generate dynamic one-time USB pairing token and session ID bound to this serial
+    let (token, session_id) = pm.generate_usb_token(&serial);
+    let cert_fp = pm.cert_fingerprint().to_string();
+
+    // Push token directly to Android phone via ADB Intent with TLS fingerprint
+    AdbManager::push_pairing_token(&serial, &token, &session_id, &cert_fp, 8443)?;
+
+    Ok(format!("Pairing token successfully pushed to USB device {}", serial))
+}
+
 fn main() {
     let (capture_chunk_tx, mut capture_chunk_rx) = mpsc::channel(64);
     let (delivered_tx, mut delivered_rx) = mpsc::channel(16);
@@ -87,16 +139,24 @@ fn main() {
         capture_chunk_tx,
     );
     let server_arc = Arc::new(server);
+    let storage_arc = Arc::new(CaptureStorage::new());
 
     let srv_manage = server_arc.clone();
+    let storage_manage = storage_arc.clone();
     let srv_setup = server_arc.clone();
 
     tauri::Builder::default()
         .manage(srv_manage)
+        .manage(storage_manage)
         .invoke_handler(tauri::generate_handler![
             get_pairing_payload,
             rotate_credentials,
-            get_connection_status
+            get_connection_status,
+            get_save_destination,
+            set_save_destination,
+            get_adb_devices,
+            trust_adb_device,
+            pair_adb_device
         ])
         .setup(move |_app| {
             println!("[LinkCam] Starting LinkCam Windows Desktop Companion Engine...");
@@ -115,7 +175,7 @@ fn main() {
                 });
             }
 
-            let capture_receiver = Arc::new(CaptureReceiver::new(delivered_tx));
+            let capture_receiver = Arc::new(CaptureReceiver::new(delivered_tx, storage_arc.clone()));
 
             // Spawn video frame consumer to virtual camera sink
             let sink_clone = vcam_sink.clone();
@@ -159,7 +219,7 @@ fn main() {
                 }
             });
 
-            println!("[LinkCam] Companion engine ready. QR Pairing on 8443, UDP video stream on 8444.");
+            println!("[LinkCam] Companion engine ready. QR Pairing & TCP Stream on 8443, UDP video stream on 8444.");
             Ok(())
         })
         .run(tauri::generate_context!())

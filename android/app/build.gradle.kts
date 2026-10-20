@@ -11,8 +11,8 @@ android {
         applicationId = "com.linkcam.app"
         minSdk = 29 // Android 10+
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.0.17"
+        versionCode = 12
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -20,13 +20,30 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val keystoreFile = rootProject.file("release.jks")
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: "linkcam_release"
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "linkcam"
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: "linkcam_release"
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            val releaseSigning = signingConfigs.findByName("release")
+            if (releaseSigning?.storeFile?.exists() == true) {
+                signingConfig = releaseSigning
+            }
         }
         debug {
             isMinifyEnabled = false

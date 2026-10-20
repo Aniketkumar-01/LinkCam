@@ -1,22 +1,8 @@
 package com.linkcam.app.ui
 
-import android.view.ViewGroup
-import androidx.camera.view.PreviewView
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import android.view.Surface
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.linkcam.app.camera.CameraLens
@@ -38,23 +24,31 @@ fun StreamScreen(
     onTriggerPhoto: () -> Unit,
     onEnterMeetingMode: () -> Unit,
     onDisconnect: () -> Unit,
-    onPreviewViewReady: (PreviewView) -> Unit = {}
+    onSurfaceReady: (Surface) -> Unit = {},
+    onSurfaceDestroyed: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0A0E17))
     ) {
-        // Real CameraX Live Viewfinder
+        // Native High-Performance Camera2 SurfaceView
         AndroidView(
             factory = { context ->
-                PreviewView(context).apply {
-                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                SurfaceView(context).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    onPreviewViewReady(this)
+                    holder.addCallback(object : SurfaceHolder.Callback {
+                        override fun surfaceCreated(holder: SurfaceHolder) {
+                            onSurfaceReady(holder.surface)
+                        }
+                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                        override fun surfaceDestroyed(holder: SurfaceHolder) {
+                            onSurfaceDestroyed()
+                        }
+                    })
                 }
             },
             modifier = Modifier.fillMaxSize()

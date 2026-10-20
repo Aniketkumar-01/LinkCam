@@ -231,7 +231,9 @@ fun PairingScreen(
                         .padding(vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // USB 1-Tap Connect Card
+                    var usbPin by remember { mutableStateOf("") }
+
+                    // USB Cable Connect Card
                     Surface(
                         shape = RoundedCornerShape(20.dp),
                         color = Color(0xFF1E293B).copy(alpha = 0.7f),
@@ -265,18 +267,44 @@ fun PairingScreen(
                                         color = Color.White
                                     )
                                     Text(
-                                        text = "Ultra-low latency (127.0.0.1:8443 via ADB)",
+                                        text = "Ultra-low latency 15–30ms (tcp:8443 via ADB)",
                                         fontSize = 12.sp,
                                         color = Color(0xFF94A3B8)
                                     )
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(14.dp))
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Text(
+                                text = "Zero static bypass: Desktop companion pushes a one-time token over ADB, or enter Desktop PIN below.",
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            OutlinedTextField(
+                                value = usbPin,
+                                onValueChange = { usbPin = it },
+                                label = { Text("Desktop PIN (or wait for ADB auto-push)") },
+                                placeholder = { Text("e.g. 582 391") },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color(0xFF10B981),
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
 
                             Button(
                                 onClick = {
-                                    onConnect("127.0.0.1", 8443, "lnk_usb", "usb_session")
+                                    val token = if (usbPin.isNotBlank()) usbPin.trim() else "usb_auth_request"
+                                    onConnect("127.0.0.1", 8443, token, "usb_session")
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
                                 shape = RoundedCornerShape(12.dp),

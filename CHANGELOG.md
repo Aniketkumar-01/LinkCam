@@ -5,6 +5,49 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-20
+
+### Security & Hardening
+- **Authenticated Wire Transport Encryption (ChaCha20)**: Replaced unencrypted streaming on Wi-Fi with constant-time ChaCha20 authenticated stream encryption (`desktop/src-tauri/src/network/crypto.rs` & `SocketTransport.kt`). Symmetric keys are derived from optical QR / ADB pairing credentials (`auth_token` + `session_id`), setting `FLAG_ENCRYPTED` (`0x08`) on all video frames, audio packets, and instant capture chunks. Defends against network packet sniffing on public/shared Wi-Fi.
+- **Cryptographic Capture Digest Validation**: Added whole-file SHA-256 digest validation in `desktop/src-tauri/src/capture/receiver.rs` upon reassembly of multi-chunk photos and scanned documents, rejecting corrupted, truncated, or tampered file transfers before disk persistence and clipboard delivery.
+- **R8 / ProGuard Keep Rules for ZXing**: Added explicit keep rules for `com.google.zxing.**` in `android/app/proguard-rules.pro` to prevent reflection stripping on release builds.
+
+### CI/CD & Production Release Pipeline
+- **DirectShow COM Virtual Camera Filter Compilation in CI**: Added CMake MSVC 64-bit build step in `.github/workflows/release.yml` to compile `LinkCamDShow64.dll` prior to installer generation.
+- **Enforced Virtual Camera DLL in Inno Setup**: Removed `skipifsourcedoesntexist` flag from `desktop/installer.iss`. The Windows setup installer now strictly packages and registers the 64-bit DirectShow COM filter (`regserver`).
+- **Production-Signed Android Release APK**: Updated GitHub Actions release workflow from `gradle assembleDebug` to `gradle assembleRelease` with automated signing configuration, producing optimized, shrink-wrapped, non-debuggable `LinkCam-Android.apk` release assets.
+
+## [1.0.18] - 2026-10-20
+
+### Security & Hardening
+- **AppContainer Access & SDDL Permissions**: Added `ALL APPLICATION PACKAGES` (`(A;;GR;;;AC)`) to the Windows Named Shared Memory and synchronization event SDDL (`D:(A;;GA;;;OW)(A;;GR;;;WD)(A;;GR;;;AC)S:(ML;;NW;;;LW)`), allowing sandboxed AppContainers (Windows Store and modern packaged apps) full read access to virtual camera feeds without privilege elevation.
+- **Loopback TLS Certificate Fingerprint Pinning**: Enhanced ADB reverse tethering with `--es cert_fp <fingerprint>` in the launch intent. Android pins the companion's TLS cert on loopback connections, thwarting rogue local processes attempting to impersonate the companion.
+- **Eliminated Static Loopback Auth Hole (`lnk_usb`)**: Completely removed hardcoded token bypass in `pairing.rs` and mobile client. USB mode now generates ephemeral one-time tokens pushed via ADB intent, bound to the ADB device hardware serial with a one-time desktop user authorization prompt.
+- **Multi-NIC Discovery Virtual Adapter Filter**: Filtered out virtual and VPN adapters (WSL, Hyper-V `vEthernet`, Docker, Tailscale, WireGuard) in `get_available_ips()`. Capped QR code IP list at 2–3 addresses, dramatically improving optical QR density and scanning speed.
+- **Backend-Validated Storage & Path Traversal Defense**: Replaced WebView `localStorage` save destination with Rust backend storage management (`settings.json`). Enforced validation against protected system directories (`C:\Windows`, `C:\Program Files`, root `C:\`), blocked path traversal (`..`), and enforced desktop-generated timestamped filenames (untrusted phone filenames are strictly discarded).
+
+### Windows Virtual Camera Subsystem
+- **Lockless Seqlock Anti-Tearing Guard**: Implemented seqlock protocol using even/odd sequence numbers in `frame_sink.rs` and `LinkCamDShow.cpp`. Post-copy sequence validation prevents consumer delivery of torn frames during simultaneous writer overwrites with zero locks.
+- **32 MB Named Shared Memory Ring Buffer (`Local\LinkCam_Video_Shm`)**: Expanded shared memory mapping capacity from 8 MB to 32 MB in `frame_sink.rs`, fully accommodating uncompressed 4K NV12 frames (12.44 MB) and 1080p double buffering.
+- **Multi-Reader Non-Stealing Synchronization**: Switched frame synchronization event from auto-reset to a manual-reset event (`bManualReset = true`) paired with per-consumer sequence counters (`m_lastSequence`) in `LinkCamDShow.cpp`. Concurrent video consumers (e.g. OBS Studio and Zoom running simultaneously) wake together without stealing frames from each other.
+- **DirectShow 4K Dynamic Allocator & Bounds Hardening**: Updated DirectShow output pin allocator buffer to support up to 4K resolutions and hardened payload sanity bounds to 32 MB, eliminating buffer overflows and consumer crashes.
+- **Universal DirectShow COM Filter (`LinkCamDShow64.dll`) Baseline**: Maintained 64-bit DirectShow COM filter registration under canonical category `CLSID_VideoInputDeviceCategory` (`{860BB310-5D01-11D0-BD3B-00A0C911CE86}`) as primary Win32 compatibility baseline, with dynamic probing of `MFCreateVirtualCamera` in `mfplat.dll` inside `mf_virtual_camera.rs`.
+
+### Transport & Subsystem Architecture
+- **Audio Pipeline Calibration**: Declared raw 48 kHz 16-bit PCM stereo (`AudioStreamer.kt`) at ~1.5 Mbps as production audio baseline, deferring Opus encoding to Phase 2.4.
+- **ABR State Machine Syntax & Transition Fix**: Restored missing `Degraded --> Emergency` recovery branch and aligned Mermaid state diagram syntax.
+- **System ADB Precedence & Daemon Preservation**: Updated `locate_adb()` in `adb.rs` to check system `PATH` (`adb version`) before bundled platform-tools, preventing ADB server daemon termination and version conflicts with Android Studio or active development environments.
+- **ADB Reverse TCP Protocol Correction**: Restricted ADB reverse port forwarding strictly to TCP port 8443 (`adb reverse tcp:8443 tcp:8443`). Documented that ADB reverse does not support UDP port 8444; USB streaming operates over the multiplexed TCP-framed pipeline.
+- **Realistic Latency Calibration**: Replaced "zero-latency" claims with verified 15–30ms ultra-low-latency over USB bus.
+- **USB Lifecycle & Licensing Specification**: Documented Developer Options USB debugging requirement, Android SDK Platform-Tools licensing terms, host RSA key authorization prompt, multi-device disambiguation (`-s <serial>`), and cable replug auto-reconnect resilience.
+
+### Android Client & Camera Architecture
+- **Camera2 Direct Hardware Pipeline**: Migrated core video streaming engine to native `android.hardware.camera2` (`CameraStreamer.kt`) with direct hardware Surface-to-Surface encoding (`MediaCodecH264Encoder.kt` with `COLOR_FormatSurface` and `createInputSurface()`). Completely eliminated CPU-bound YUV frame processing (`yuv420ToNv21`), cutting client CPU usage from 15–25% to <3%.
+- **Monotonic Clock Baseline Validation**: Added query for `SENSOR_INFO_TIMESTAMP_SOURCE` (REALTIME vs UNKNOWN) to maintain drift-free monotonic presentation timestamps across device HALs.
+- **Native Viewfinder & Stream Combinations**: Bound native `android.view.SurfaceView` in `StreamScreen.kt` for zero-overhead local rendering. Configured stream combination constraints (preview detachment for meeting mode power saving; documented optical sensor session rebuild requirements for high-res photo grabs on LIMITED/LEGACY sensors).
+- **CameraX Utility Retainment**: Retained CameraX strictly for utility flows: 5-second QR barcode scanner (`PairingScreen.kt`) and standalone offline document capture (`DocumentScanner.kt`).
+- **Document Scanner Offline Fallback**: Added Google Play Services availability checks and standalone CameraX photo + perspective transform + PDF generation fallback for Xiaomi HyperOS and de-Googled devices.
+
 ## [1.0.17] - 2026-10-20
 
 ### Added

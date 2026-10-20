@@ -22,3 +22,7 @@
 # Keep ML Kit Barcode and Document Scanner
 -keep class com.google.mlkit.** { *; }
 -keep class com.google.android.gms.vision.** { *; }
+
+# Keep ZXing Barcode Scanning Fallback
+-keep class com.google.zxing.** { *; }
+-dontwarn com.google.zxing.**

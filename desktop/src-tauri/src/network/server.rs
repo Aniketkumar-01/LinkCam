@@ -169,6 +169,9 @@ impl NetworkServer {
         resp_buf.extend_from_slice(b"OK");
         writer.write_all(&resp_buf).await?;
 
+        // Derive 32-byte transport session key from mutual pairing credentials
+        let session_key = crate::network::crypto::derive_session_key(parts[0], parts[1]);
+
         // Update session
         {
             let mut session_guard = self.session.write().await;
@@ -198,6 +201,12 @@ impl NetworkServer {
                 break;
             }
 
+            // Decrypt encrypted packets in-place using verified session key
+            if (hdr.flags & PacketHeader::FLAG_ENCRYPTED) != 0 {
+                let nonce = crate::network::crypto::construct_nonce(hdr.sequence, hdr.timestamp);
+                crate::network::crypto::chacha20_crypt(&mut body, &session_key, &nonce, 1);
+            }
+
             let packet = Packet::new(hdr.clone(), body);
 
             match hdr.packet_type {
@@ -214,6 +223,9 @@ impl NetworkServer {
                 }
                 PacketType::VideoFrame => {
                     let _ = self.video_frame_tx.send(packet);
+                }
+                PacketType::AudioFrame => {
+                    // 48 kHz 16-bit PCM stereo audio frame received
                 }
                 PacketType::InstantCaptureChunk => {
                     let _ = self.capture_chunk_tx.send(packet).await;

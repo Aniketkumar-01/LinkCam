@@ -14,8 +14,10 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
 
     <!-- Foreground Service & Power Management -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -41,11 +43,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Persistent Foreground Camera Streaming Service -->
+        <!-- Persistent Foreground Camera & Audio Streaming Service -->
         <service
             android:name=".service.StreamService"
             android:exported="false"
-            android:foregroundServiceType="camera" />
+            android:foregroundServiceType="camera|microphone" />
 
         <!-- Inform Google Play Services to prepare the barcode scanner module -->
         <meta-data

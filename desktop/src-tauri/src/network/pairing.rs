@@ -1,6 +1,6 @@
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
@@ -35,6 +35,8 @@ pub struct PairingManager {
     device_name: String,
     cert_fingerprint: String,
     ip_records: HashMap<IpAddr, IpAttemptRecord>,
+    usb_tokens: HashMap<String, (String, Instant)>,
+    trusted_adb_serials: HashSet<String>,
 }
 
 impl PairingManager {
@@ -49,6 +51,8 @@ impl PairingManager {
             device_name,
             cert_fingerprint: "SHA256:4a:3b:2c:1d:linkcam:v1.1".to_string(),
             ip_records: HashMap::new(),
+            usb_tokens: HashMap::new(),
+            trusted_adb_serials: HashSet::new(),
         };
         mgr.rotate_credentials();
         mgr
@@ -68,6 +72,33 @@ impl PairingManager {
         let pin_str = pin_val.to_string();
         self.verification_pin = format!("{} {}", &pin_str[..3], &pin_str[3..]);
         self.created_at = Instant::now();
+    }
+
+    /// Generate an ephemeral, one-time USB pairing token bound to the ADB device serial
+    pub fn generate_usb_token(&mut self, serial: &str) -> (String, String) {
+        let token: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(32)
+            .map(char::from)
+            .collect();
+        let session_id = format!("usb_{}", uuid::Uuid::new_v4());
+        self.usb_tokens.insert(serial.to_string(), (token.clone(), Instant::now()));
+        (token, session_id)
+    }
+
+    /// Trust an ADB device serial
+    pub fn trust_adb_device(&mut self, serial: &str) {
+        self.trusted_adb_serials.insert(serial.to_string());
+    }
+
+    /// Check if an ADB device serial has been trusted by the user
+    pub fn is_device_trusted(&self, serial: &str) -> bool {
+        self.trusted_adb_serials.contains(serial)
+    }
+
+    /// TLS certificate fingerprint for certificate pinning over USB and Wi-Fi
+    pub fn cert_fingerprint(&self) -> &str {
+        &self.cert_fingerprint
     }
 
     /// Check if current pairing token has expired
@@ -119,23 +150,29 @@ impl PairingManager {
         }
     }
 
-    /// Validate an incoming client handshake token with rate limiting and expiration
+    /// Validate an incoming client handshake token with rate limiting and expiration.
+    /// CRITICAL SECURITY: Loopback connections must NEVER accept a hardcoded/static token like "lnk_usb"!
+    /// A static token would permit any local process, rogue app, or RDP user to silently pair and hijack the virtual camera.
     pub fn validate_token(&mut self, ip: IpAddr, token: &str, session: &str) -> Result<bool, &'static str> {
         if self.is_ip_blocked(&ip) {
             return Err("ERR_PAIRING_RATE_LIMITED: IP blocked due to repeated failed pairing attempts");
         }
 
-        // Loopback / USB tethering (ADB reverse): local host is trusted
-        if ip.is_loopback() && (token == "lnk_usb" || token == self.current_token) {
-            self.record_attempt(ip, true);
-            return Ok(true);
-        }
+        // Check if token matches active dynamic one-time USB session token (if loopback)
+        let is_valid_usb = if ip.is_loopback() {
+            // Prune expired USB tokens (> 120s)
+            self.usb_tokens.retain(|_, (_, exp)| exp.elapsed() < Duration::from_secs(120));
+            self.usb_tokens.values().any(|(tok, _)| tok == token)
+        } else {
+            false
+        };
 
-        if self.is_token_expired() {
+        if self.is_token_expired() && !is_valid_usb {
             return Err("ERR_QR_TOKEN_EXPIRED: Pairing token has expired. Please refresh the QR code.");
         }
 
-        let is_valid = (!self.current_token.is_empty() && self.current_token == token && self.session_id == session)
+        let is_valid = is_valid_usb
+            || (!self.current_token.is_empty() && self.current_token == token && self.session_id == session)
             || (!self.verification_pin.is_empty() && (token == self.verification_pin || token == self.verification_pin.replace(' ', "")));
 
         self.record_attempt(ip, is_valid);
@@ -147,32 +184,84 @@ impl PairingManager {
         }
     }
 
-    /// Retrieve all usable local IP addresses for Wi-Fi and direct phone hotspot
+    /// Retrieve usable local IP addresses filtered strictly to physical and mobile hotspot adapters.
+    /// Excludes virtual interfaces (Hyper-V, WSL, Docker, VPNs) and caps the list to 2-3 addresses
+    /// to preserve high-density QR code optical scanning.
     pub fn get_available_ips(&self) -> Vec<String> {
-        let mut ips = Vec::new();
+        let mut candidates: Vec<(String, bool)> = Vec::new();
 
         if let Ok(ifaces) = local_ip_address::list_afinet_netifas() {
-            for (_name, ip) in ifaces {
+            for (name, ip) in ifaces {
+                let name_lower = name.to_lowercase();
+                // Filter out virtual, WSL, Hyper-V, Docker, TAP/TUN, and VPN adapters
+                let is_virtual = name_lower.contains("vethernet")
+                    || name_lower.contains("wsl")
+                    || name_lower.contains("tailscale")
+                    || name_lower.contains("wireguard")
+                    || name_lower.contains("docker")
+                    || name_lower.contains("hyper-v")
+                    || name_lower.contains("virtual")
+                    || name_lower.contains("tap")
+                    || name_lower.contains("tun")
+                    || name_lower.contains("host-only")
+                    || name_lower.contains("vmware")
+                    || name_lower.contains("bluetooth")
+                    || name_lower.contains("zerotier");
+
+                if is_virtual {
+                    continue;
+                }
+
                 if let IpAddr::V4(v4) = ip {
-                    if !v4.is_loopback() && !v4.is_link_local() {
+                    if v4.is_loopback() || v4.is_link_local() || v4.is_broadcast() || v4.is_multicast() {
+                        continue;
+                    }
+
+                    // Enforce RFC 1918 private IP ranges or Windows Mobile Hotspot default subnet (192.168.137.x)
+                    let octets = v4.octets();
+                    let is_rfc1918 = octets[0] == 10
+                        || (octets[0] == 172 && (16..=31).contains(&octets[1]))
+                        || (octets[0] == 192 && octets[1] == 168);
+
+                    if is_rfc1918 {
                         let ip_str = v4.to_string();
-                        if !ips.contains(&ip_str) {
-                            ips.push(ip_str);
+                        // Prioritize hotspot interfaces (192.168.137.x or 192.168.43.x)
+                        let is_hotspot = (octets[0] == 192 && octets[1] == 168 && (octets[2] == 137 || octets[2] == 43))
+                            || name_lower.contains("hotspot")
+                            || name_lower.contains("wi-fi direct");
+
+                        if !candidates.iter().any(|(addr, _)| addr == &ip_str) {
+                            candidates.push((ip_str, is_hotspot));
                         }
                     }
                 }
             }
         }
 
+        // Sort: Hotspots first, then physical LAN/Wi-Fi
+        candidates.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let mut ips: Vec<String> = candidates.into_iter().map(|(addr, _)| addr).collect();
+
+        // Fallback to local_ip if empty
         if ips.is_empty() {
             if let Ok(ip) = local_ip_address::local_ip() {
-                ips.push(ip.to_string());
+                if let IpAddr::V4(v4) = ip {
+                    if !v4.is_loopback() && !v4.is_link_local() {
+                        let octets = v4.octets();
+                        let is_private = octets[0] == 10
+                            || (octets[0] == 172 && (16..=31).contains(&octets[1]))
+                            || (octets[0] == 192 && octets[1] == 168);
+                        if is_private {
+                            ips.push(v4.to_string());
+                        }
+                    }
+                }
             }
         }
 
-        if !ips.contains(&"127.0.0.1".to_string()) {
-            ips.push("127.0.0.1".to_string());
-        }
+        // Cap at 2-3 addresses to preserve QR density and avoid bloating
+        ips.truncate(3);
 
         ips
     }
@@ -226,6 +315,20 @@ mod tests {
         let old_token = payload.auth_token;
         mgr.rotate_credentials();
         assert!(mgr.validate_token(test_ip, &old_token, &payload.session_id).is_err());
+    }
+
+    #[test]
+    fn test_static_loopback_token_rejected() {
+        let mut mgr = PairingManager::new(8443, "Windows-PC".to_string());
+        let loopback = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+
+        // The dangerous "lnk_usb" static bypass MUST be rejected
+        let res = mgr.validate_token(loopback, "lnk_usb", "usb_session");
+        assert!(res.is_err(), "Static token 'lnk_usb' must be rejected");
+
+        // Dynamic USB token generated for a specific device serial must be accepted
+        let (usb_token, usb_session) = mgr.generate_usb_token("device_serial_1234");
+        assert!(mgr.validate_token(loopback, &usb_token, &usb_session).unwrap());
     }
 
     #[test]

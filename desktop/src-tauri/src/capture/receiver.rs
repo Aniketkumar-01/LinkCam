@@ -34,9 +34,9 @@ pub struct CaptureReceiver {
 }
 
 impl CaptureReceiver {
-    pub fn new(delivered_tx: mpsc::Sender<DeliveredCaptureEvent>) -> Self {
+    pub fn new(delivered_tx: mpsc::Sender<DeliveredCaptureEvent>, storage: Arc<CaptureStorage>) -> Self {
         Self {
-            storage: Arc::new(CaptureStorage::new()),
+            storage,
             transfers: Arc::new(RwLock::new(HashMap::new())),
             delivered_tx,
         }
@@ -106,9 +106,28 @@ impl CaptureReceiver {
                 }
             }
 
-            // Save to disk
+            // Verify cryptographic SHA-256 integrity before saving
+            if !transfer.meta.sha256_checksum.is_empty() {
+                use sha2::{Digest, Sha256};
+                let mut hasher = Sha256::new();
+                hasher.update(&complete_data);
+                let computed_hash = format!("{:x}", hasher.finalize());
+
+                if !computed_hash.eq_ignore_ascii_case(&transfer.meta.sha256_checksum) {
+                    eprintln!(
+                        "[LinkCam Security] Checksum mismatch for transfer {}: expected {}, computed {}",
+                        transfer.meta.transfer_id, transfer.meta.sha256_checksum, computed_hash
+                    );
+                    return Err(format!(
+                        "Integrity verification failed: checksum mismatch (expected {}, computed {})",
+                        transfer.meta.sha256_checksum, computed_hash
+                    ));
+                }
+            }
+
+            // Save to disk using desktop-generated safe filename based on validated MIME type
             let saved_path = self.storage
-                .save_capture(&transfer.meta.file_name, &complete_data)
+                .save_capture(&transfer.meta.mime_type, &complete_data)
                 .map_err(|e| format!("Failed to save file: {}", e))?;
 
             // Copy to Windows clipboard
@@ -118,9 +137,14 @@ impl CaptureReceiver {
                 &complete_data,
             );
 
+            let saved_file_name = saved_path.file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("capture.bin")
+                .to_string();
+
             let event = DeliveredCaptureEvent {
                 transfer_id: transfer.meta.transfer_id.clone(),
-                file_name: transfer.meta.file_name.clone(),
+                file_name: saved_file_name,
                 mime_type: transfer.meta.mime_type.clone(),
                 file_path: saved_path.to_string_lossy().to_string(),
                 file_size: complete_data.len() as u64,

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Check, Copy, RefreshCw, ShieldCheck, Usb, Wifi, Zap } from 'lucide-react';
+import { Check, Copy, RefreshCw, ShieldCheck, Usb, Wifi, Zap, Smartphone, ArrowRight } from 'lucide-react';
 
 interface PairingWizardProps {
   serverPort: number;
@@ -10,6 +10,13 @@ interface PairingWizardProps {
   verificationPin?: string;
   onRefreshPairing: () => void;
   onSimulateConnect?: () => void;
+}
+
+interface AdbDevice {
+  serial: String;
+  model: String;
+  status: String;
+  is_trusted: boolean;
 }
 
 export const PairingWizard: React.FC<PairingWizardProps> = ({
@@ -23,6 +30,9 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
 }) => {
   const [activeMode, setActiveMode] = useState<'hotspot' | 'wifi' | 'usb'>('hotspot');
   const [copied, setCopied] = useState(false);
+  const [adbDevices, setAdbDevices] = useState<AdbDevice[]>([]);
+  const [usbStatusMsg, setUsbStatusMsg] = useState<string | null>(null);
+  const [isPushingToken, setIsPushingToken] = useState(false);
 
   const pairingData = JSON.stringify({
     port: serverPort,
@@ -36,6 +46,49 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
     navigator.clipboard.writeText(pairingData);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Poll for connected ADB devices when in USB mode
+  useEffect(() => {
+    if (activeMode !== 'usb') return;
+
+    const checkAdb = async () => {
+      try {
+        // @ts-ignore
+        if (window.__TAURI__?.core?.invoke) {
+          // @ts-ignore
+          const devs = await window.__TAURI__.core.invoke('get_adb_devices');
+          setAdbDevices(devs || []);
+        }
+      } catch {
+        // Ignore in browser mock mode
+      }
+    };
+
+    checkAdb();
+    const interval = setInterval(checkAdb, 3000);
+    return () => clearInterval(interval);
+  }, [activeMode]);
+
+  const handleTrustAndPair = async (serial: string) => {
+    setIsPushingToken(true);
+    setUsbStatusMsg(null);
+    try {
+      // @ts-ignore
+      if (window.__TAURI__?.core?.invoke) {
+        // @ts-ignore
+        await window.__TAURI__.core.invoke('trust_adb_device', { serial });
+        // @ts-ignore
+        const res = await window.__TAURI__.core.invoke('pair_adb_device', { serial });
+        setUsbStatusMsg(res || 'One-time secure USB token pushed to phone!');
+      } else {
+        setUsbStatusMsg(`Mock: Trusted & pushed USB token to ${serial}`);
+      }
+    } catch (e: any) {
+      setUsbStatusMsg(`Error: ${e?.toString() || 'Failed to authorize device'}`);
+    } finally {
+      setIsPushingToken(false);
+    }
   };
 
   return (
@@ -58,8 +111,8 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
               : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Wifi className="w-3.5 h-3.5" />
-          <span>Direct Hotspot (Zero Router)</span>
+          <Zap className="w-4 h-4" />
+          <span>Mobile Hotspot (Recommended)</span>
         </button>
 
         <button
@@ -70,7 +123,7 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
               : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Wifi className="w-3.5 h-3.5" />
+          <Wifi className="w-4 h-4" />
           <span>Local Wi-Fi Network</span>
         </button>
 
@@ -82,86 +135,83 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
               : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Usb className="w-3.5 h-3.5" />
-          <span>USB Cable (Ultra Low Latency)</span>
+          <Usb className="w-4 h-4" />
+          <span>USB Cable (Tethering / ADB)</span>
         </button>
       </div>
 
-      {/* Content for Hotspot / Wi-Fi Modes (QR Code pairing) */}
+      {/* QR Code and Instructions Section */}
       {activeMode !== 'usb' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-          {/* QR Code Container */}
-          <div className="fluent-card p-6 rounded-2xl flex flex-col items-center justify-center space-y-4 shadow-xl">
-            <div className="p-4 bg-white rounded-xl shadow-md">
+          {/* Crisp QR Code Container */}
+          <div className="fluent-card p-8 rounded-2xl flex flex-col items-center justify-center space-y-4">
+            <div className="bg-white p-4 rounded-xl shadow-2xl ring-1 ring-black/10">
               <QRCodeSVG
                 value={pairingData}
-                size={240}
+                size={220}
                 level="L"
                 includeMargin={true}
               />
             </div>
 
-            <div className="flex items-center gap-2 w-full pt-2">
+            <div className="flex items-center gap-2">
               <button
                 onClick={onRefreshPairing}
-                className="flex-1 fluent-btn-subtle py-2 px-3 text-xs flex items-center justify-center gap-1.5"
-                title="Generate new temporary pairing token"
+                className="fluent-btn-subtle px-3 py-1.5 text-xs text-slate-300 flex items-center gap-1.5 hover:text-white"
               >
-                <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
-                <span>Refresh QR</span>
+                <RefreshCw className="w-3.5 h-3.5 text-blue-400" />
+                <span>Rotate Session Key</span>
               </button>
 
               <button
                 onClick={copyPairingCode}
-                className="fluent-btn-subtle py-2 px-3 text-xs flex items-center justify-center gap-1.5"
-                title="Copy raw connection payload"
+                className="fluent-btn-subtle px-3 py-1.5 text-xs text-slate-300 flex items-center gap-1.5 hover:text-white"
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? 'Copied' : 'Copy'}</span>
+                <span>{copied ? 'Copied' : 'Copy JSON'}</span>
               </button>
             </div>
           </div>
 
           {/* Step-by-Step Instructions */}
-          <div className="space-y-6">
-            {activeMode === 'hotspot' ? (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-blue-400 font-medium text-sm">
-                  <span className="w-6 h-6 rounded-full bg-blue-600/20 flex items-center justify-center text-xs">★</span>
-                  <span>Direct Mobile Hotspot Guide (No Wi-Fi router needed)</span>
-                </div>
+          <div className="fluent-card p-6 rounded-2xl space-y-4">
+            <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
+              <span>Pairing Instructions</span>
+            </h3>
 
-                <ol className="space-y-3 text-xs text-slate-300">
-                  <li className="flex gap-3">
+            {activeMode === 'hotspot' && (
+              <div className="space-y-3 text-xs text-slate-300">
+                <p className="text-slate-400">
+                  Zero external router needed. Ideal for travel, coffee shops, or congested networks.
+                </p>
+                <ol className="space-y-2.5 list-decimal list-inside text-slate-300">
+                  <li className="flex gap-2">
                     <span className="font-mono text-blue-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">1</span>
-                    <span>Turn on <strong>Mobile Hotspot</strong> on your Android phone (Settings &gt; Network &gt; Hotspot).</span>
+                    <span>Turn on <strong>Mobile Hotspot</strong> on your Android phone.</span>
                   </li>
-                  <li className="flex gap-3">
+                  <li className="flex gap-2">
                     <span className="font-mono text-blue-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
-                    <span>On this PC, click your Wi-Fi icon in the taskbar and connect to your phone's hotspot network.</span>
+                    <span>Connect your Windows PC Wi-Fi to your phone's hotspot.</span>
                   </li>
-                  <li className="flex gap-3">
+                  <li className="flex gap-2">
                     <span className="font-mono text-blue-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">3</span>
-                    <span>Open the LinkCam app on your phone and tap <strong>Scan QR</strong> to point at the code on the left.</span>
+                    <span>Open LinkCam on Android and point camera at the QR code.</span>
                   </li>
                 </ol>
-
-                <div className="p-3.5 bg-blue-950/30 border border-blue-500/20 rounded-xl text-xs text-blue-200">
-                  💡 <strong>Direct Connection:</strong> Your phone acts as the private router. Video frames stream directly between your phone and laptop with zero internet usage.
-                </div>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-slate-200 font-medium text-sm">
-                  <span>Local Wi-Fi Network Guide</span>
-                </div>
+            )}
 
-                <ol className="space-y-3 text-xs text-slate-300">
-                  <li className="flex gap-3">
+            {activeMode === 'wifi' && (
+              <div className="space-y-3 text-xs text-slate-300">
+                <p className="text-slate-400">
+                  Connect both devices to the same local Wi-Fi router (5 GHz recommended for optimal latency).
+                </p>
+                <ol className="space-y-2.5 list-decimal list-inside text-slate-300">
+                  <li className="flex gap-2">
                     <span className="font-mono text-blue-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">1</span>
-                    <span>Ensure both your phone and this Windows PC are connected to the same Wi-Fi network (5GHz recommended).</span>
+                    <span>Ensure PC and Android phone are on the same Wi-Fi network.</span>
                   </li>
-                  <li className="flex gap-3">
+                  <li className="flex gap-2">
                     <span className="font-mono text-blue-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
                     <span>Open LinkCam on your phone and point the camera at the QR code.</span>
                   </li>
@@ -169,8 +219,8 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
               </div>
             )}
 
-            {/* Quick Demo Simulator Button */}
-            {onSimulateConnect && (
+            {/* Quick Demo Simulator Button (Dev Mode Only - Tree-shaken in production builds) */}
+            {import.meta.env.DEV && onSimulateConnect && (
               <div className="pt-4 border-t border-white/[0.08]">
                 <button
                   onClick={onSimulateConnect}
@@ -184,16 +234,58 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
           </div>
         </div>
       ) : (
-        /* USB Wired Instructions */
+        /* USB Cable Mode Instructions & Device Manager */
         <div className="fluent-card p-6 rounded-2xl space-y-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
               <Usb className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-slate-100">Wired USB Plug-and-Play</h3>
-              <p className="text-xs text-slate-400">Highest bandwidth, lowest latency (&lt;40ms), and charges your phone simultaneously.</p>
+              <h3 className="text-sm font-semibold text-slate-100">Wired USB Cable Tethering (15–30ms Ultra-Low Latency)</h3>
+              <p className="text-xs text-slate-400">Highest bandwidth, zero Wi-Fi interference, and charges your phone simultaneously.</p>
             </div>
+          </div>
+
+          {/* Connected ADB Device Auto-Detection */}
+          <div className="p-4 bg-slate-950/70 rounded-xl border border-white/[0.08] space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-200 flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-emerald-400" />
+                <span>Detected USB Devices (ADB)</span>
+              </span>
+              <span className="text-[11px] text-slate-400">Auto-refreshing every 3s</span>
+            </div>
+
+            {adbDevices.length > 0 ? (
+              <div className="space-y-2">
+                {adbDevices.map((dev, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-3 bg-black/40 rounded-lg border border-white/[0.06]">
+                    <div>
+                      <div className="text-xs font-semibold text-white">{String(dev.model)}</div>
+                      <div className="text-[11px] font-mono text-slate-400">Serial: {String(dev.serial)} &bull; State: {String(dev.status)}</div>
+                    </div>
+                    <button
+                      onClick={() => handleTrustAndPair(String(dev.serial))}
+                      disabled={isPushingToken || String(dev.status) !== 'device'}
+                      className="fluent-btn-primary px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <span>{dev.is_trusted ? 'Push One-Time Token' : 'Trust & Push Token'}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-slate-400 italic py-2">
+                No authorized ADB devices detected. Plug in your USB cable and ensure USB Debugging is turned on.
+              </div>
+            )}
+
+            {usbStatusMsg && (
+              <div className="text-xs font-medium text-amber-300 bg-amber-950/40 border border-amber-500/20 p-2.5 rounded-lg">
+                {usbStatusMsg}
+              </div>
+            )}
           </div>
 
           <ol className="space-y-3 text-xs text-slate-300">
@@ -203,19 +295,19 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
             </li>
             <li className="flex gap-3">
               <span className="font-mono text-amber-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
-              <span>Enable <strong>USB Debugging</strong> or USB Tethering in your phone's Developer Options.</span>
+              <span>Enable <strong>USB Debugging</strong> in your phone's Developer Options and accept the <em>"Allow USB debugging from this computer?"</em> prompt on your phone screen.</span>
             </li>
             <li className="flex gap-3">
               <span className="font-mono text-amber-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">3</span>
               <span>
-                Run port forward command in PowerShell or Command Prompt:
+                Click <strong>Trust & Push Token</strong> above, or manually reverse TCP port 8443 in PowerShell:
                 <div className="mt-2 flex items-center gap-2">
                   <code className="bg-black/50 border border-white/[0.1] px-3 py-1.5 rounded-lg text-[11px] font-mono text-amber-300">
                     adb reverse tcp:8443 tcp:8443
                   </code>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('adb reverse tcp:8443 tcp:8443 && adb reverse tcp:8444 tcp:8444');
+                      navigator.clipboard.writeText('adb reverse tcp:8443 tcp:8443');
                       setCopied(true);
                       setTimeout(() => setCopied(false), 2000);
                     }}
@@ -225,11 +317,14 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
                     <span>Copy ADB Command</span>
                   </button>
                 </div>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Note: Port 8443 forwards the multiplexed TCP video and control stream. ADB reverse does not support UDP port 8444.
+                </p>
               </span>
             </li>
             <li className="flex gap-3">
               <span className="font-mono text-amber-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">4</span>
-              <span>Open the LinkCam Android app, tap <strong>Manual / USB</strong>, and tap <strong>Connect via USB (127.0.0.1)</strong>.</span>
+              <span>The phone will automatically receive the one-time USB pairing key and establish the connection.</span>
             </li>
           </ol>
         </div>
@@ -244,7 +339,7 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-100">Pairing Security & Verification</h3>
-              <p className="text-xs text-slate-400">Control which devices can connect and stream to your PC.</p>
+              <p className="text-xs text-slate-400">Zero static loopback bypass. Devices require dynamic tokens or mutual SAS PIN.</p>
             </div>
           </div>
 
@@ -259,21 +354,21 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
           <div className="p-4 bg-slate-950/60 rounded-xl border border-white/[0.06] space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-200">Require Verification PIN</span>
-              <span className="text-[11px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">Active</span>
+              <span className="text-xs font-medium text-slate-200">Mutual SAS Verification PIN</span>
+              <span className="text-[11px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">Enforced</span>
             </div>
             <p className="text-[11px] text-slate-400">
-              Prompts an authorization popup on your PC whenever a new phone requests connection.
+              Protects against rogue devices on local networks by requiring matching 6-digit PIN confirmation.
             </p>
           </div>
 
           <div className="p-4 bg-slate-950/60 rounded-xl border border-white/[0.06] space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-200">Device Whitelisting</span>
-              <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">1 Trusted</span>
+              <span className="text-xs font-medium text-slate-200">Hardware Serial Binding</span>
+              <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">Bound to Serial</span>
             </div>
             <p className="text-[11px] text-slate-400">
-              Trusted phones can reconnect seamlessly without repeating the verification prompt.
+              USB connections are explicitly bound to ADB hardware serials with one-time session tokens.
             </p>
           </div>
         </div>

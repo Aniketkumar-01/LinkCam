@@ -353,6 +353,23 @@ pub struct KeyframeRequestPayload {
     pub reason: String,
 }
 
+/// Protocol Error Codes matching System Specification §9
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(u16)]
+pub enum ErrorCode {
+    CertPinFailed = 0x1001,
+    AuthPinMismatch = 0x1002,
+    PairingRateLimited = 0x1003,
+    QrTokenExpired = 0x1004,
+    AuthTokenMismatch = 0x1005,
+    PayloadTooLarge = 0x2001,
+    ProtocolVersion = 0x2002,
+    ChunkChecksumFail = 0x2003,
+    CodecUnsupported = 0x3001,
+    ThermalThrottled = 0x3002,
+    VcamRegisterFailed = 0x4001,
+}
+
 /// Graceful Session Disconnect Payload (PacketType::Disconnect, 0x06)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DisconnectPayload {

@@ -1,4 +1,5 @@
-use super::frame_sink::VirtualCameraSink;
+use super::frame_sink::{VirtualCameraSink, SHM_EVENT_NAME, SHM_NAME};
+use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -18,67 +19,99 @@ pub struct VirtualCameraDevice {
     name: String,
     sink: Arc<VirtualCameraSink>,
     registered: bool,
+    filter_dll_path: Option<PathBuf>,
 }
 
 impl VirtualCameraDevice {
     pub const DEFAULT_CAMERA_NAME: &'static str = "LinkCam Virtual Camera";
     /// Canonical Windows DirectShow Video Input Device Category GUID
     pub const CLSID_VIDEO_INPUT_CATEGORY: &'static str = "{860BB310-5D01-11D0-BD3B-00A0C911CE86}";
+    /// Canonical LinkCam DirectShow Filter CLSID
+    pub const CLSID_LINKCAM_DSHOW_FILTER: &'static str = "{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
 
     pub fn new(sink: Arc<VirtualCameraSink>) -> Self {
+        let filter_dll_path = Self::find_directshow_dll();
         Self {
             name: Self::DEFAULT_CAMERA_NAME.to_string(),
             sink,
             registered: false,
+            filter_dll_path,
         }
     }
 
-    /// Register LinkCam in Windows DirectShow and Media Foundation catalogs
+    fn find_directshow_dll() -> Option<PathBuf> {
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))?;
+
+        let candidates = [
+            exe_dir.join("LinkCamDShow64.dll"),
+            exe_dir.join("LinkCamDShow.dll"),
+            PathBuf::from(r"C:\Program Files\LinkCam\LinkCamDShow64.dll"),
+        ];
+
+        candidates.into_iter().find(|p| p.exists())
+    }
+
+    /// Register LinkCam in Windows DirectShow (Win 10/11) and Media Foundation (Win 11)
     pub fn register(&mut self) -> Result<(), VirtualCameraError> {
+        self.sink.start();
+
         #[cfg(target_os = "windows")]
         {
-            println!("[LinkCam] Registering '{}' in Windows Video Capture catalog...", self.name);
+            // 1. DirectShow COM Filter Registration (Universal Win 10 & Win 11 compatibility)
+            if let Some(dll_path) = &self.filter_dll_path {
+                let dll_str = dll_path.to_string_lossy();
+                println!("[LinkCam] Registering DirectShow COM filter DLL: {}", dll_str);
 
-            // Register into canonical DirectShow CLSID_VideoInputDeviceCategory in HKCU
-            // Category: {860BB310-5D01-11D0-BD3B-00A0C911CE86}
-            let reg_key = format!(
-                r"HKCU\Software\Classes\CLSID\{}\Instance\LinkCamVirtualCamera",
-                Self::CLSID_VIDEO_INPUT_CATEGORY
-            );
+                let status = std::process::Command::new("regsvr32.exe")
+                    .args(&["/s", &dll_str])
+                    .status();
 
-            let _ = std::process::Command::new("reg")
-                .args(&["add", &reg_key, "/v", "FriendlyName", "/t", "REG_SZ", "/d", &self.name, "/f"])
-                .output();
+                match status {
+                    Ok(s) if s.success() => {
+                        println!("[LinkCam] Successfully registered DirectShow filter DLL with Windows.");
+                    }
+                    Ok(s) => {
+                        eprintln!("[LinkCam] Warning: regsvr32 exited with status {:?}", s.code());
+                    }
+                    Err(e) => {
+                        eprintln!("[LinkCam] Warning: Failed to run regsvr32: {}", e);
+                    }
+                }
+            } else {
+                println!(
+                    "[LinkCam] Shared Memory '{}' and event '{}' are active for video streaming. (DirectShow Filter DLL not found in executable directory; install via installer or run regsvr32 LinkCamDShow64.dll to expose camera to Windows apps).",
+                    SHM_NAME, SHM_EVENT_NAME
+                );
+            }
 
-            let _ = std::process::Command::new("reg")
-                .args(&["add", &reg_key, "/v", "CLSID", "/t", "REG_SZ", "/d", Self::CLSID_VIDEO_INPUT_CATEGORY, "/f"])
-                .output();
-
-            let _ = std::process::Command::new("reg")
-                .args(&[
-                    "add",
-                    &reg_key,
-                    "/v",
-                    "DevicePath",
-                    "/t",
-                    "REG_SZ",
-                    "/d",
-                    r"\\?\root#linkcam#0000#{860bb310-5d01-11d0-bd3b-00a0c911ce86}\global",
-                    "/f",
-                ])
-                .output();
-
-            // Set MFMediaSource attributes for Media Foundation virtual camera enumeration
-            let mf_key = r"HKCU\Software\Classes\MediaFoundation\Transforms\LinkCamVirtualCamera";
-            let _ = std::process::Command::new("reg")
-                .args(&["add", mf_key, "/v", "FriendlyName", "/t", "REG_SZ", "/d", &self.name, "/f"])
-                .output();
+            // 2. Windows 11 Media Foundation Virtual Camera API probe
+            let is_win11_mf = Self::check_windows11_mf();
+            if is_win11_mf {
+                println!("[LinkCam] Windows 11 Media Foundation Virtual Camera API verified (mfplat!MFCreateVirtualCamera available).");
+            } else {
+                println!("[LinkCam] Windows 10 environment detected: DirectShow COM filter is active as the primary virtual camera path.");
+            }
         }
 
         self.registered = true;
-        self.sink.start();
-        println!("[LinkCam] Virtual Camera registered successfully in canonical DirectShow category.");
         Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    fn check_windows11_mf() -> bool {
+        use windows::core::w;
+        use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+
+        unsafe {
+            let h_mod = LoadLibraryW(w!("mfplat.dll"));
+            if let Ok(handle) = h_mod {
+                let proc = GetProcAddress(handle, windows::core::s!("MFCreateVirtualCamera"));
+                return proc.is_some();
+            }
+        }
+        false
     }
 
     /// Unregister when the companion app closes
@@ -86,18 +119,13 @@ impl VirtualCameraDevice {
         if self.registered {
             #[cfg(target_os = "windows")]
             {
-                let reg_key = format!(
-                    r"HKCU\Software\Classes\CLSID\{}\Instance\LinkCamVirtualCamera",
-                    Self::CLSID_VIDEO_INPUT_CATEGORY
-                );
-                let _ = std::process::Command::new("reg")
-                    .args(&["delete", &reg_key, "/f"])
-                    .output();
-
-                let mf_key = r"HKCU\Software\Classes\MediaFoundation\Transforms\LinkCamVirtualCamera";
-                let _ = std::process::Command::new("reg")
-                    .args(&["delete", mf_key, "/f"])
-                    .output();
+                if let Some(dll_path) = &self.filter_dll_path {
+                    let dll_str = dll_path.to_string_lossy();
+                    let _ = std::process::Command::new("regsvr32.exe")
+                        .args(&["/u", "/s", &dll_str])
+                        .output();
+                    println!("[LinkCam] DirectShow COM filter DLL unregistered.");
+                }
             }
 
             self.sink.stop();
@@ -111,3 +139,4 @@ impl VirtualCameraDevice {
         self.registered
     }
 }
+
