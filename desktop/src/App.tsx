@@ -5,12 +5,14 @@ import { PairingWizard } from './components/PairingWizard';
 import { CapturesGallery } from './components/CapturesGallery';
 import { SettingsView } from './components/SettingsView';
 import { DeliveredCapture, QuickCaptureTray } from './components/QuickCaptureTray';
+import { PairingVerificationModal, PendingPairingRequest } from './components/PairingVerificationModal';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('studio');
   const [isConnected, setIsConnected] = useState(true);
   const [sessionToken, setSessionToken] = useState('lnk_tok_7f9a2b1c4e6d8035');
   const [latestCapture, setLatestCapture] = useState<DeliveredCapture | null>(null);
+  const [pendingPairing, setPendingPairing] = useState<PendingPairingRequest | null>(null);
 
   const [captures, setCaptures] = useState<DeliveredCapture[]>([
     {
@@ -71,8 +73,26 @@ export const App: React.FC = () => {
     navigator.clipboard.writeText(path);
   };
 
-  const handleOpenFolder = (path: string) => {
-    console.log('Opening folder for:', path);
+  const handleTriggerPairingPrompt = () => {
+    setPendingPairing({
+      id: `req_${Date.now()}`,
+      deviceName: 'Pixel 8 Pro (ARM64)',
+      ipAddress: '192.168.43.1',
+      connectionMode: 'DirectHotspot',
+      verificationPin: '582 391',
+      requestedAt: 'Just now',
+    });
+  };
+
+  const handleAcceptPairing = (_req: PendingPairingRequest, _trust: boolean) => {
+    setPendingPairing(null);
+    setIsConnected(true);
+    setActiveTab('studio');
+  };
+
+  const handleDeclinePairing = (_req: PendingPairingRequest) => {
+    setPendingPairing(null);
+    setIsConnected(false);
   };
 
   return (
@@ -118,10 +138,7 @@ export const App: React.FC = () => {
             availableIps={['192.168.43.1', '192.168.1.120', '127.0.0.1']}
             sessionToken={sessionToken}
             onRefreshPairing={handleRefreshPairing}
-            onSimulateConnect={() => {
-              setIsConnected(true);
-              setActiveTab('studio');
-            }}
+            onSimulateConnect={handleTriggerPairingPrompt}
           />
         )}
 
@@ -134,6 +151,13 @@ export const App: React.FC = () => {
         onDismiss={() => setLatestCapture(null)}
         onOpenFolder={handleOpenFolder}
         onCopyPath={handleCopyPath}
+      />
+
+      {/* Interactive Pairing Verification & Authorization Modal */}
+      <PairingVerificationModal
+        request={pendingPairing}
+        onAccept={handleAcceptPairing}
+        onDecline={handleDeclinePairing}
       />
     </div>
   );

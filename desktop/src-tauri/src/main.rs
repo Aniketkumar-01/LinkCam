@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod capture;
 mod network;
 mod vcam;
@@ -78,6 +80,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     println!("[LinkCam] Companion engine ready. QR Pairing available on port 8443.");
+
+    // Launch standalone chromeless desktop UI window
+    #[cfg(target_os = "windows")]
+    {
+        tokio::spawn(async {
+            tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
+            let app_url = "http://127.0.0.1:8443";
+            let appdata = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
+            let profile_dir = format!("{}\\LinkCam\\ui_profile", appdata);
+
+            let _ = std::process::Command::new("cmd")
+                .args(&[
+                    "/c",
+                    "start",
+                    "msedge.exe",
+                    &format!("--app={}", app_url),
+                    &format!("--user-data-dir={}", profile_dir),
+                    "--window-size=1180,780",
+                ])
+                .spawn();
+        });
+    }
 
     // Keep running
     tokio::signal::ctrl_c().await?;

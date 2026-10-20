@@ -176,44 +176,49 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
             </div>
           </div>
         </div>
-      ) : (
-        /* USB Wired Instructions */
-        <div className="fluent-card p-6 rounded-2xl space-y-6">
+      {/* Device Security & Pairing Policy */}
+      <div className="fluent-card p-6 rounded-2xl space-y-5 border border-white/[0.08]">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
-              <Usb className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-purple-600/20 text-purple-400 flex items-center justify-center">
+              <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-slate-100">Wired USB Plug-and-Play</h3>
-              <p className="text-xs text-slate-400">Highest bandwidth, lowest latency (&lt;40ms), and charges your phone simultaneously.</p>
+              <h3 className="text-sm font-semibold text-slate-100">Pairing Security & Verification</h3>
+              <p className="text-xs text-slate-400">Control which devices can connect and stream to your PC.</p>
             </div>
           </div>
 
-          <ol className="space-y-3 text-xs text-slate-300">
-            <li className="flex gap-3">
-              <span className="font-mono text-amber-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">1</span>
-              <span>Connect your phone to your PC with a high-speed USB-C cable (USB 3.0 recommended).</span>
-            </li>
-            <li className="flex gap-3">
-              <span className="font-mono text-amber-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
-              <span>Enable <strong>USB Debugging</strong> or USB Tethering in your phone's Developer Options.</span>
-            </li>
-            <li className="flex gap-3">
-              <span className="font-mono text-amber-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">3</span>
-              <span>LinkCam will automatically detect the device and establish the video pipe.</span>
-            </li>
-          </ol>
-
-          <div className="pt-2">
-            <button
-              onClick={onSimulateConnect}
-              className="fluent-btn-primary py-2.5 px-6 text-xs font-semibold flex items-center gap-2"
-            >
-              <span>Connect via USB</span>
-            </button>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">Active Pairing PIN:</span>
+            <span className="px-3 py-1 bg-slate-950 border border-blue-500/40 rounded-lg text-sm font-mono font-bold text-blue-400">
+              582 391
+            </span>
           </div>
         </div>
-      )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+          <div className="p-4 bg-slate-950/60 rounded-xl border border-white/[0.06] space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-200">Require Verification PIN</span>
+              <span className="text-[11px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">Active</span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Prompts an authorization popup on your PC whenever a new phone requests connection.
+            </p>
+          </div>
+
+          <div className="p-4 bg-slate-950/60 rounded-xl border border-white/[0.06] space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-200">Device Whitelisting</span>
+              <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">1 Trusted</span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Trusted phones can reconnect seamlessly without repeating the verification prompt.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

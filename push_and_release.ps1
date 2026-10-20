@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.0.6",
-    [string]$Message = "Release v1.0.6: Fix Kotlin Float literal mismatch in StreamScreen, stabilize APK packaging, and publish Windows installer"
+    [string]$Tag = "v1.0.7",
+    [string]$Message = "Release v1.0.7: Standalone Windows GUI app, DirectShow Virtual Camera registration, and pairing verification modal"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -27,7 +27,7 @@ Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
 Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
-git commit -m "fix(android): fix Float literal in StreamScreen and stabilize CI release workflow ($Tag)"
+git commit -m "feat(desktop): standalone GUI app mode, system vcam registration, and pairing verification ($Tag)"
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow

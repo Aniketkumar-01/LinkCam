@@ -5,6 +5,14 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-10-20
+
+### Added
+- **Windows Video Capture System Catalog Registration**: Implemented direct Windows DirectShow category registration (`HKCU\Software\Classes\CLSID\{86497AEE-B071-11D0-A3A0-00A0C9223196}\Instance\LinkCamVirtualCamera`), ensuring "LinkCam Virtual Camera" is properly discovered and listed in Zoom, Discord, Google Meet, Microsoft Teams, and OBS.
+- **Standalone Windows GUI App Mode**: Added `#![windows_subsystem = "windows"]` and standalone application window spawning. Launching LinkCam no longer opens a black console/terminal window; it displays the Windows 11 Fluent Live Studio interface directly.
+- **Interactive Pairing Authorization & Verification**: Added `PairingVerificationModal` component and device pairing policy options, allowing users to inspect device name, IP address, and 6-digit verification PIN, with interactive `[Pair & Allow]` and `[Decline]` controls.
+- **One-Click Windows Desktop Launchers**: Added `Launch-LinkCam.bat` and silent `Launch-LinkCam.vbs` to repo root for zero-terminal launching.
+
 ## [1.0.6] - 2026-10-20
 
 ### Fixed
