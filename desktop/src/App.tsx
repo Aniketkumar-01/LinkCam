@@ -211,9 +211,8 @@ export const App: React.FC = () => {
         {activeTab === 'captures' && (
           <CapturesGallery
             captures={captures}
-            onTriggerPhoto={handleTriggerPhoto}
-            onTriggerDocumentScan={handleTriggerDocumentScan}
             onOpenFolder={handleOpenFolder}
+            onCopyPath={handleCopyPath}
           />
         )}
 
@@ -258,3 +257,6 @@ export const App: React.FC = () => {
     </div>
   );
 };
+
+export default App;
+

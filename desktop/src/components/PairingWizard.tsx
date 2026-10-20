@@ -19,6 +19,7 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
   sessionId,
   verificationPin = '582 391',
   onRefreshPairing,
+  onSimulateConnect,
 }) => {
   const [activeMode, setActiveMode] = useState<'hotspot' | 'wifi' | 'usb'>('hotspot');
   const [copied, setCopied] = useState(false);
@@ -172,15 +173,17 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
             )}
 
             {/* Quick Demo Simulator Button */}
-            <div className="pt-4 border-t border-white/[0.08]">
-              <button
-                onClick={onSimulateConnect}
-                className="fluent-btn-primary w-full py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 shadow-lg"
-              >
-                <Zap className="w-4 h-4" />
-                <span>Simulate Phone Connected (Preview Mode)</span>
-              </button>
-            </div>
+            {onSimulateConnect && (
+              <div className="pt-4 border-t border-white/[0.08]">
+                <button
+                  onClick={onSimulateConnect}
+                  className="fluent-btn-primary w-full py-2.5 px-4 text-xs font-semibold flex items-center justify-center gap-2 shadow-lg"
+                >
+                  <Zap className="w-4 h-4" />
+                  <span>Simulate Phone Connected (Preview Mode)</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       ) : (
