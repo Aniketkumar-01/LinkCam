@@ -88,7 +88,7 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
 
     // QR Code Scanning (ML Kit Barcode Scanning + Offline Standalone ZXing)
-    implementation("com.google.mlkit:barcode-scanning:17.2.0")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.zxing:core:3.5.3")
 
     // Document Scanning (Google Play Services Document Scanner / Vision Edge)
