@@ -6,14 +6,23 @@
 #include <initguid.h>
 #include <cstdint>
 #include <atomic>
+#include <algorithm>
+
+#ifndef KSPROPERTY_SUPPORT_GET
+#define KSPROPERTY_SUPPORT_GET 1
+#endif
 
 // CLSID_LinkCamDShowFilter: {D37E5526-92F7-4E61-A76F-B590E8F88E29}
 DEFINE_GUID(CLSID_LinkCamDShowFilter,
     0xd37e5526, 0x92f7, 0x4e61, 0xa7, 0x6f, 0xb5, 0x90, 0xe8, 0xf8, 0x8e, 0x29);
 
-// CLSID_VideoInputDeviceCategory: {860BB310-5D01-11D0-BD3B-00A0C911CE86}
-DEFINE_GUID(CLSID_VideoInputDeviceCategory_Local,
-    0x860bb310, 0x5d01, 0x11d0, 0xbd, 0x3b, 0x00, 0xa0, 0xc9, 0x11, 0xce, 0x86);
+// AMPROPSETID_Pin: {9B00F101-156E-11D1-B16A-00C04F02299D}
+DEFINE_GUID(LinkCam_AMPROPSETID_Pin,
+    0x9b00f101, 0x156e, 0x11d1, 0xb1, 0x6a, 0x00, 0xc0, 0x4f, 0x02, 0x29, 0x9d);
+
+// PIN_CATEGORY_CAPTURE: {FB6C4281-0353-11D1-905F-0000C0CC16BA}
+DEFINE_GUID(LinkCam_PIN_CATEGORY_CAPTURE,
+    0xfb6c4281, 0x0353, 0x11d1, 0x90, 0x5f, 0x00, 0x00, 0xc0, 0xcc, 0x16, 0xba);
 
 #define SHM_NAME L"Local\\LinkCam_Video_Shm"
 #define SHM_EVENT_NAME L"Local\\LinkCam_Video_Event"
@@ -328,10 +337,10 @@ STDMETHODIMP LinkCamOutputPin::EnumMediaTypes(IEnumMediaTypes** ppEnum) {
 }
 
 STDMETHODIMP LinkCamOutputPin::Get(REFGUID guidPropSet, DWORD dwPropID, LPVOID pInstanceData, DWORD cbInstanceData, LPVOID pPropData, DWORD cbPropData, DWORD* pcbReturned) {
-    if (guidPropSet == AMPROPERTY_PIN_CATEGORY && dwPropID == AMPROPERTY_PIN_CATEGORY) {
+    if (guidPropSet == LinkCam_AMPROPSETID_Pin && dwPropID == AMPROPERTY_PIN_CATEGORY) {
         if (pcbReturned) *pcbReturned = sizeof(GUID);
         if (pPropData && cbPropData >= sizeof(GUID)) {
-            *(GUID*)pPropData = PIN_CATEGORY_CAPTURE;
+            *(GUID*)pPropData = LinkCam_PIN_CATEGORY_CAPTURE;
             return S_OK;
         }
         return E_FAIL;
@@ -340,7 +349,7 @@ STDMETHODIMP LinkCamOutputPin::Get(REFGUID guidPropSet, DWORD dwPropID, LPVOID p
 }
 
 STDMETHODIMP LinkCamOutputPin::QuerySupported(REFGUID guidPropSet, DWORD dwPropID, DWORD* pTypeSupport) {
-    if (guidPropSet == AMPROPERTY_PIN_CATEGORY && dwPropID == AMPROPERTY_PIN_CATEGORY) {
+    if (guidPropSet == LinkCam_AMPROPSETID_Pin && dwPropID == AMPROPERTY_PIN_CATEGORY) {
         if (pTypeSupport) *pTypeSupport = KSPROPERTY_SUPPORT_GET;
         return S_OK;
     }
@@ -411,7 +420,7 @@ DWORD WINAPI LinkCamOutputPin::ThreadProc(LPVOID lpParam) {
             if (SUCCEEDED(pSample->GetPointer(&pData)) && pData) {
                 long sampleSize = pSample->GetSize();
                 if (sampleSize > 0) {
-                    long copyLen = (long)min((uint32_t)sampleSize, hdr->payload_size);
+                    long copyLen = (long)(std::min)((uint32_t)sampleSize, hdr->payload_size);
                     memcpy(pData, payload, copyLen);
                     pSample->SetActualDataLength(copyLen);
                 }

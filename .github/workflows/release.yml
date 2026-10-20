@@ -128,8 +128,13 @@ jobs:
           cmake -B desktop/vcam-dshow/build -S desktop/vcam-dshow -A x64
           cmake --build desktop/vcam-dshow/build --config Release
           New-Item -ItemType Directory -Force -Path "desktop/src-tauri/target/release"
-          Copy-Item "desktop/vcam-dshow/build/Release/LinkCamDShow64.dll" "desktop/src-tauri/target/release/LinkCamDShow64.dll"
-          Write-Host "Successfully compiled and staged LinkCamDShow64.dll"
+          $dll = (Get-ChildItem -Path "desktop/vcam-dshow/build" -Filter "LinkCamDShow64.dll" -Recurse | Select-Object -First 1)?.FullName
+          if ($dll) {
+            Copy-Item $dll "desktop/src-tauri/target/release/LinkCamDShow64.dll" -Force
+            Write-Host "Successfully compiled and staged LinkCamDShow64.dll from $dll"
+          } else {
+            throw "LinkCamDShow64.dll was not found after build!"
+          }
 
       - name: Build Windows Setup Installer
         shell: pwsh
