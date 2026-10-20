@@ -5,6 +5,14 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.13] - 2026-10-20
+
+### Fixed
+- **Embedded Frontend Asset Bundling (Zero External Dev Server Dependency)**: Removed `devUrl` and `beforeDevCommand` from `tauri.conf.json`, ensuring `tauri::generate_context!()` compiles the application to embed all static React/Vite assets directly from `../dist` into the binary. Resolved `ERR_CONNECTION_REFUSED: localhost refused to connect`.
+- **Vite Relative Asset Base URL**: Set `base: './'` in `desktop/vite.config.ts`, ensuring all compiled scripts and stylesheets resolve cleanly across Tauri custom protocols (`tauri://localhost`, `http://tauri.localhost`).
+- **WebView2 Content Security Policy (CSP)**: Updated `tauri.conf.json` security CSP to whitelist `tauri:` and `http://tauri.localhost`.
+- **Self-Contained Local Launcher**: Updated `Launch-LinkCam.bat` to automatically build `desktop/dist` if not already present before invoking Cargo.
+
 ## [1.0.12] - 2026-10-20
 
 ### Fixed
