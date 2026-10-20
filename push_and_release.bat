@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 set TAG=%1
-if "%TAG%"=="" set TAG=v1.0.15
+if "%TAG%"=="" set TAG=v1.0.16
 
 echo ========================================================
 echo   LinkCam - Git Push and Release Automation (!TAG!)
@@ -33,7 +33,7 @@ git add .
 
 REM 5. Commit changes
 echo [*] Committing !TAG! release...
-git commit -m "fix(build): clean unused imports in desktop UI and release (!TAG!)"
+git commit -m "fix(desktop): resolve DPAPI CRYPT_INTEGER_BLOB compilation and clean warnings (!TAG!)"
 
 REM 6. Push to main branch
 echo [*] Pushing to GitHub (main)...

@@ -1,4 +1,4 @@
-use linkcam_protocol::{Packet, PacketHeader, PacketType, HEADER_SIZE};
+use linkcam_protocol::{Packet, PacketType, HEADER_SIZE};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;

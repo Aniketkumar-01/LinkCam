@@ -29,7 +29,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
     setIsExporting(true);
     setTimeout(() => {
       const diagData = {
-        appVersion: "1.0.15",
+        appVersion: "1.0.16",
         architecture: "x86_64",
         os: "Windows 11 (22H2 / Build 22621)",
         network: {

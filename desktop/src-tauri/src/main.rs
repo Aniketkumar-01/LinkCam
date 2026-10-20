@@ -4,9 +4,8 @@ mod capture;
 mod network;
 mod vcam;
 
-use capture::{CaptureReceiver, DeliveredCaptureEvent};
-use linkcam_protocol::{CameraControl, CameraLens, CaptureMode, ConnectionMode, TelemetryHeartbeat};
-use network::{ClientSession, NetworkServer, PairingManager, PairingPayload, SessionState, UdpVideoServer};
+use capture::CaptureReceiver;
+use network::{NetworkServer, UdpVideoServer};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use vcam::{VirtualCameraDevice, VirtualCameraSink};

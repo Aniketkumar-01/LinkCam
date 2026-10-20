@@ -1,7 +1,7 @@
 use linkcam_protocol::Packet;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone)]
 pub struct VideoFrameInfo {

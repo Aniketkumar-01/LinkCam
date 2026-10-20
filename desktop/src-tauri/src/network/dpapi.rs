@@ -14,14 +14,14 @@ fn get_trusted_store_path() -> PathBuf {
 #[cfg(windows)]
 pub fn encrypt_bytes(plaintext: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::Security::Cryptography::{
-        CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPTOAPI_BLOB,
+        CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     };
 
-    let mut in_blob = CRYPTOAPI_BLOB {
+    let mut in_blob = CRYPT_INTEGER_BLOB {
         cbData: plaintext.len() as u32,
         pbData: plaintext.as_ptr() as *mut u8,
     };
-    let mut out_blob = CRYPTOAPI_BLOB::default();
+    let mut out_blob = CRYPT_INTEGER_BLOB::default();
 
     unsafe {
         CryptProtectData(
@@ -51,14 +51,14 @@ pub fn encrypt_bytes(plaintext: &[u8]) -> Result<Vec<u8>, String> {
 #[cfg(windows)]
 pub fn decrypt_bytes(ciphertext: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::Security::Cryptography::{
-        CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPTOAPI_BLOB,
+        CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     };
 
-    let mut in_blob = CRYPTOAPI_BLOB {
+    let mut in_blob = CRYPT_INTEGER_BLOB {
         cbData: ciphertext.len() as u32,
         pbData: ciphertext.as_ptr() as *mut u8,
     };
-    let mut out_blob = CRYPTOAPI_BLOB::default();
+    let mut out_blob = CRYPT_INTEGER_BLOB::default();
 
     unsafe {
         CryptUnprotectData(

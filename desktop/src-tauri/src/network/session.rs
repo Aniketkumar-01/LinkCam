@@ -1,4 +1,4 @@
-use linkcam_protocol::{CameraControl, ConnectionMode, Packet, PacketHeader, PacketType, TelemetryHeartbeat};
+use linkcam_protocol::{CameraControl, ConnectionMode, TelemetryHeartbeat};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;

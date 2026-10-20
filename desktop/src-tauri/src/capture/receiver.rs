@@ -3,7 +3,6 @@ use super::storage::CaptureStorage;
 use linkcam_protocol::{InstantCaptureMeta, Packet};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 

@@ -81,7 +81,7 @@ impl NetworkServer {
 
     async fn handle_connection(
         &self,
-        mut stream: TcpStream,
+        stream: TcpStream,
         peer_addr: SocketAddr,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Enforce private subnet only (LAN, Hotspot, Loopback)
