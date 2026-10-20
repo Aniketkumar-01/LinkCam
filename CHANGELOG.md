@@ -5,6 +5,11 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] - 2026-10-20
+
+### Added
+- **True Standalone Native Desktop App (Tauri v2)**: Converted LinkCam Desktop Companion into a true independent native Windows application using Tauri v2. Completely eliminated the external browser window and `127.0.0.1` network error screens. The application now compiles to a self-contained `.exe` with embedded assets, custom window chrome, and integrated background engine.
+
 ## [1.0.10] - 2026-10-20
 
 ### Fixed

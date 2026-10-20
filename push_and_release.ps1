@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.0.10",
-    [string]$Message = "Release v1.0.10: Define missing handleOpenFolder in desktop App.tsx, standalone GUI app, and system vcam"
+    [string]$Tag = "v1.0.11",
+    [string]$Message = "Release v1.0.11: True standalone native desktop app using Tauri v2, system virtual camera, and pairing verification"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -27,7 +27,7 @@ Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
 Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
-git commit -m "fix(desktop): define missing handleOpenFolder handler and bump to $Tag"
+git commit -m "feat(desktop): convert to true standalone native app using Tauri v2 ($Tag)"
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow

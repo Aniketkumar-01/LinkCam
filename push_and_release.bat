@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 set TAG=%1
-if "%TAG%"=="" set TAG=v1.0.10
+if "%TAG%"=="" set TAG=v1.0.11
 
 echo ========================================================
 echo   LinkCam - Git Push and Release Automation (!TAG!)
@@ -33,7 +33,7 @@ git add .
 
 REM 5. Commit changes
 echo [*] Committing !TAG! release...
-git commit -m "fix(desktop): define missing handleOpenFolder handler and bump to !TAG!"
+git commit -m "feat(desktop): convert to true standalone native app using Tauri v2 (!TAG!)"
 
 REM 6. Push to main branch
 echo [*] Pushing to GitHub (main)...
