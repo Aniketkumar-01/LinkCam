@@ -9,6 +9,7 @@ interface StreamHUDProps {
   isCharging: boolean;
   connectionMode: 'Usb' | 'DirectHotspot' | 'WiFi';
   isVcamActive: boolean;
+  onOpenDiagnostics?: () => void;
 }
 
 export const StreamHUD: React.FC<StreamHUDProps> = ({
@@ -19,6 +20,7 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
   isCharging,
   connectionMode,
   isVcamActive,
+  onOpenDiagnostics,
 }) => {
   const bitrateMbps = (bitrateKbps / 1000).toFixed(1);
 
@@ -69,11 +71,16 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
 
         <div className="w-px h-3.5 bg-white/[0.12]" />
 
-        {/* Latency */}
-        <div className="flex items-center gap-1 text-slate-300">
+        {/* Latency & Diagnostics Click */}
+        <button
+          onClick={onOpenDiagnostics}
+          className="flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors cursor-pointer group"
+          title="Click to open Live Diagnostics & Latency Suite"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse group-hover:scale-125 transition-transform" />
           <span className="font-mono tabular-nums text-slate-100">{latencyMs}</span>
           <span className="text-[10px] text-slate-400">ms</span>
-        </div>
+        </button>
 
         <div className="w-px h-3.5 bg-white/[0.12]" />
 

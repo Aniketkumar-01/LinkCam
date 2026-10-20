@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.0.13",
-    [string]$Message = "Release v1.0.13: Fully self-contained native desktop app with embedded static assets, relative base routing, and DirectShow virtual camera"
+    [string]$Tag = "v1.0.14",
+    [string]$Message = "Release v1.0.14: Phase 1 P0 Security & Protocol Core (Mutual SAS Verification PIN, 120s Token Expiration, Per-IP Rate Limiting, New Protocol Packet Types)"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -27,7 +27,7 @@ Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
 Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
-git commit -m "feat(desktop): convert to true standalone native app using Tauri v2 ($Tag)"
+git commit -m "feat(core): implement all 4 architecture phases - security, hardware H.264, vcam, and diagnostics ($Tag)"
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow

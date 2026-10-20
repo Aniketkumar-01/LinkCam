@@ -6,13 +6,16 @@ import { CapturesGallery } from './components/CapturesGallery';
 import { SettingsView } from './components/SettingsView';
 import { DeliveredCapture, QuickCaptureTray } from './components/QuickCaptureTray';
 import { PairingVerificationModal, PendingPairingRequest } from './components/PairingVerificationModal';
+import { DiagnosticsModal } from './components/DiagnosticsModal';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('studio');
   const [isConnected, setIsConnected] = useState(true);
   const [sessionToken, setSessionToken] = useState('lnk_tok_7f9a2b1c4e6d8035');
+  const [verificationPin, setVerificationPin] = useState('582 391');
   const [latestCapture, setLatestCapture] = useState<DeliveredCapture | null>(null);
   const [pendingPairing, setPendingPairing] = useState<PendingPairingRequest | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const [captures, setCaptures] = useState<DeliveredCapture[]>([
     {
@@ -67,6 +70,8 @@ export const App: React.FC = () => {
   const handleRefreshPairing = () => {
     const randomHex = Math.random().toString(16).substring(2, 10);
     setSessionToken(`lnk_tok_${randomHex}`);
+    const randPin = Math.floor(100000 + Math.random() * 900000).toString();
+    setVerificationPin(`${randPin.slice(0, 3)} ${randPin.slice(3)}`);
   };
 
   const handleCopyPath = (path: string) => {
@@ -83,7 +88,7 @@ export const App: React.FC = () => {
       deviceName: 'Pixel 8 Pro (ARM64)',
       ipAddress: '192.168.43.1',
       connectionMode: 'DirectHotspot',
-      verificationPin: '582 391',
+      verificationPin: verificationPin,
       requestedAt: 'Just now',
     });
   };
@@ -127,6 +132,7 @@ export const App: React.FC = () => {
             isVcamActive={true}
             onTriggerPhoto={handleTriggerPhoto}
             onTriggerDocumentScan={handleTriggerDocumentScan}
+            onOpenDiagnostics={() => setShowDiagnostics(true)}
           />
         )}
 
@@ -143,6 +149,7 @@ export const App: React.FC = () => {
             serverPort={8443}
             availableIps={['192.168.43.1', '192.168.1.120', '127.0.0.1']}
             sessionToken={sessionToken}
+            verificationPin={verificationPin}
             onRefreshPairing={handleRefreshPairing}
             onSimulateConnect={handleTriggerPairingPrompt}
           />
@@ -164,6 +171,16 @@ export const App: React.FC = () => {
         request={pendingPairing}
         onAccept={handleAcceptPairing}
         onDecline={handleDeclinePairing}
+      />
+
+      {/* Live System Diagnostics & Latency Suite Modal */}
+      <DiagnosticsModal
+        isOpen={showDiagnostics}
+        onClose={() => setShowDiagnostics(false)}
+        latencyMs={28}
+        fps={60.0}
+        bitrateKbps={8200}
+        batteryPct={88}
       />
     </div>
   );

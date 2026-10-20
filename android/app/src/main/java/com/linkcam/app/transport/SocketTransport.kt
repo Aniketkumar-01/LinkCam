@@ -112,16 +112,63 @@ class SocketTransport(
                     val payload = ByteArray(header.payloadLength)
                     if (!readFully(inStream, payload)) break
 
-                    if (header.packetType == PacketHeader.TYPE_CAMERA_CONTROL) {
-                        val jsonString = String(payload, Charsets.UTF_8)
-                        val jsonObject = gson.fromJson(jsonString, JsonObject::class.java)
-                        onCameraControlReceived(jsonObject)
+                    when (header.packetType) {
+                        PacketHeader.TYPE_CAMERA_CONTROL -> {
+                            val jsonString = String(payload, Charsets.UTF_8)
+                            val jsonObject = gson.fromJson(jsonString, JsonObject::class.java)
+                            onCameraControlReceived(jsonObject)
+                        }
+                        PacketHeader.TYPE_KEEP_ALIVE_PING -> {
+                            // Respond to keep-alive ping with acknowledgment
+                            sendKeepAlivePing()
+                        }
+                        PacketHeader.TYPE_DISCONNECT -> {
+                            disconnect()
+                            break
+                        }
                     }
                 } catch (e: Exception) {
                     break
                 }
             }
             disconnect()
+        }
+    }
+
+    fun sendKeepAlivePing() {
+        if (!isRunning) return
+        scope.launch {
+            try {
+                val header = PacketHeader(
+                    packetType = PacketHeader.TYPE_KEEP_ALIVE_PING,
+                    sequence = sequenceCounter.getAndIncrement(),
+                    timestamp = System.currentTimeMillis(),
+                    payloadLength = 0
+                )
+                outputStream?.write(header.toByteArray())
+                outputStream?.flush()
+            } catch (ignored: Exception) {}
+        }
+    }
+
+    fun sendCodecConfig(configJson: String) {
+        if (!isRunning) return
+        scope.launch {
+            try {
+                val payload = configJson.toByteArray(Charsets.UTF_8)
+                val header = PacketHeader(
+                    packetType = PacketHeader.TYPE_CODEC_CONFIG,
+                    flags = PacketHeader.FLAG_CONFIG,
+                    sequence = sequenceCounter.getAndIncrement(),
+                    timestamp = System.currentTimeMillis(),
+                    payloadLength = payload.size
+                )
+                val packet = Packet(header, payload)
+                outputStream?.write(packet.toByteArray())
+                outputStream?.flush()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 

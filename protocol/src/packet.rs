@@ -36,16 +36,28 @@ pub enum ProtocolError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum PacketType {
+    /// Keep-alive ping and round-trip latency probe
+    KeepAlivePing = 0x00,
     /// Live video frame payload
     VideoFrame = 0x01,
     /// Optional synchronized audio packet
     AudioFrame = 0x02,
     /// Chunk of an instant photo or scanned PDF document
     InstantCaptureChunk = 0x03,
+    /// Codec configuration and parameter sets (SPS/PPS/VPS)
+    CodecConfig = 0x04,
+    /// Instantaneous Decoder Refresh (IDR) keyframe request
+    KeyframeRequest = 0x05,
+    /// Graceful session termination
+    Disconnect = 0x06,
+    /// Selective retransmission request for missing capture chunk
+    ChunkRetransmit = 0x07,
     /// Pairing and authentication handshake initiation
     PairingAuth = 0x10,
     /// Pairing authentication response / token verification
     PairingAuthResponse = 0x11,
+    /// Mutual SAS / 6-digit PIN verification confirmation
+    PairingVerify = 0x12,
     /// Remote camera control RPC from PC to Phone
     CameraControl = 0x20,
     /// Acknowledgment of camera control
@@ -59,11 +71,17 @@ impl TryFrom<u8> for PacketType {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
+            0x00 => Ok(PacketType::KeepAlivePing),
             0x01 => Ok(PacketType::VideoFrame),
             0x02 => Ok(PacketType::AudioFrame),
             0x03 => Ok(PacketType::InstantCaptureChunk),
+            0x04 => Ok(PacketType::CodecConfig),
+            0x05 => Ok(PacketType::KeyframeRequest),
+            0x06 => Ok(PacketType::Disconnect),
+            0x07 => Ok(PacketType::ChunkRetransmit),
             0x10 => Ok(PacketType::PairingAuth),
             0x11 => Ok(PacketType::PairingAuthResponse),
+            0x12 => Ok(PacketType::PairingVerify),
             0x20 => Ok(PacketType::CameraControl),
             0x21 => Ok(PacketType::CameraControlAck),
             0x30 => Ok(PacketType::TelemetryHeartbeat),
@@ -95,8 +113,9 @@ pub struct PacketHeader {
 
 impl PacketHeader {
     pub const FLAG_KEYFRAME: u8 = 0x01;
-    pub const FLAG_COMPRESSED: u8 = 0x02;
-    pub const FLAG_ENCRYPTED: u8 = 0x04;
+    pub const FLAG_CONFIG: u8 = 0x02;
+    pub const FLAG_END_OF_STREAM: u8 = 0x04;
+    pub const FLAG_ENCRYPTED: u8 = 0x08;
 
     pub fn new(packet_type: PacketType, sequence: u32, timestamp: u64, payload_length: u32) -> Self {
         Self {
@@ -118,6 +137,30 @@ impl PacketHeader {
             self.flags |= Self::FLAG_KEYFRAME;
         } else {
             self.flags &= !Self::FLAG_KEYFRAME;
+        }
+    }
+
+    pub fn is_config(&self) -> bool {
+        (self.flags & Self::FLAG_CONFIG) != 0
+    }
+
+    pub fn set_config(&mut self, is_config: bool) {
+        if is_config {
+            self.flags |= Self::FLAG_CONFIG;
+        } else {
+            self.flags &= !Self::FLAG_CONFIG;
+        }
+    }
+
+    pub fn is_encrypted(&self) -> bool {
+        (self.flags & Self::FLAG_ENCRYPTED) != 0
+    }
+
+    pub fn set_encrypted(&mut self, is_encrypted: bool) {
+        if is_encrypted {
+            self.flags |= Self::FLAG_ENCRYPTED;
+        } else {
+            self.flags &= !Self::FLAG_ENCRYPTED;
         }
     }
 
@@ -172,7 +215,10 @@ pub struct Packet {
 }
 
 impl Packet {
-    pub const MAX_PAYLOAD_SIZE: usize = 16 * 1024 * 1024; // 16 MB max frame/chunk
+    /// Maximum allowed payload size (10 MB for high-res photo chunks / document scans)
+    pub const MAX_PAYLOAD_SIZE: usize = 10 * 1024 * 1024;
+    /// Maximum allowed video frame size (2 MB for H.264 / HEVC NAL slices)
+    pub const MAX_VIDEO_FRAME_SIZE: usize = 2 * 1024 * 1024;
 
     pub fn new(header: PacketHeader, payload: Vec<u8>) -> Self {
         let mut p = Self { header, payload };
@@ -287,6 +333,48 @@ pub struct InstantCaptureMeta {
     pub sha256_checksum: String,
 }
 
+/// Codec Configuration Payload (PacketType::CodecConfig, 0x04)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodecConfigPayload {
+    pub codec: VideoCodec,
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    pub sps: Vec<u8>,
+    pub pps: Vec<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vps: Option<Vec<u8>>,
+}
+
+/// Instantaneous Decoder Refresh (IDR) Keyframe Request (PacketType::KeyframeRequest, 0x05)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyframeRequestPayload {
+    pub stream_id: u32,
+    pub reason: String,
+}
+
+/// Graceful Session Disconnect Payload (PacketType::Disconnect, 0x06)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisconnectPayload {
+    pub reason_code: u16,
+    pub message: String,
+}
+
+/// Selective Chunk Retransmission Request (PacketType::ChunkRetransmit, 0x07)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChunkRetransmitPayload {
+    pub transfer_id: String,
+    pub chunk_index: u32,
+}
+
+/// Mutual SAS / PIN Verification Payload (PacketType::PairingVerify, 0x12)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairingVerifyPayload {
+    pub sas_code: String,
+    pub auth_token: String,
+    pub is_trusted: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -352,5 +440,51 @@ mod tests {
         let json = serde_json::to_string(&hb).unwrap();
         let deserialized: TelemetryHeartbeat = serde_json::from_str(&json).unwrap();
         assert_eq!(hb, deserialized);
+    }
+
+    #[test]
+    fn test_phase1_new_packet_types_roundtrip() {
+        let types = vec![
+            PacketType::KeepAlivePing,
+            PacketType::CodecConfig,
+            PacketType::KeyframeRequest,
+            PacketType::Disconnect,
+            PacketType::ChunkRetransmit,
+            PacketType::PairingVerify,
+        ];
+
+        for pt in types {
+            let byte = pt as u8;
+            let decoded = PacketType::try_from(byte).unwrap();
+            assert_eq!(pt, decoded);
+        }
+    }
+
+    #[test]
+    fn test_codec_config_payload_roundtrip() {
+        let config = CodecConfigPayload {
+            codec: VideoCodec::H264,
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            sps: vec![0x67, 0x42, 0x00, 0x28],
+            pps: vec![0x68, 0xce, 0x38, 0x80],
+            vps: None,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let decoded: CodecConfigPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(config, decoded);
+    }
+
+    #[test]
+    fn test_pairing_verify_payload_roundtrip() {
+        let verify = PairingVerifyPayload {
+            sas_code: "582 391".to_string(),
+            auth_token: "tok_secure_test_123".to_string(),
+            is_trusted: true,
+        };
+        let json = serde_json::to_string(&verify).unwrap();
+        let decoded: PairingVerifyPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(verify, decoded);
     }
 }

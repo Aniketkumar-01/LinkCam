@@ -5,6 +5,37 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.14] - 2026-10-20
+
+### Added
+- **Phase 1 (Security & Protocol Core)**:
+  - **Dynamic Mutual SAS Verification PIN**: Desktop companion generates a random 6-digit mutual authentication PIN (e.g. `582 391`) embedded into the QR pairing payload and displayed on the desktop authorization modal for cross-device verification.
+  - **Time-Limited QR Session Expiration**: Introduced a 120-second sliding expiration window (`exp: 120`) on pairing tokens, preventing stale QR code reuse.
+  - **Per-IP Handshake Rate Limiting & DoS Protection**: Implemented connection rate limiting (max 3 pairing attempts/min per IP, auto-blocking after 5 failed attempts for 15 minutes) to protect against brute-force pairing attacks.
+  - **Windows DPAPI Credential Store (`dpapi.rs`)**: Secure hardware-bound token encryption using Windows DPAPI (`CryptProtectData` / `CryptUnprotectData`) persisting trusted device tokens in `%LOCALAPPDATA%\LinkCam\trusted_devices.dat`.
+  - **Private Adapter Network Binding**: Added subnet and IP validation (`is_private_ip()`) to restrict connections to private LAN ranges (RFC 1918 / loopback), rejecting unauthorized connections from public or VPN interfaces.
+  - **Memory DoS Guards & Frame Caps**: Enforced strict packet size ceilings (`MAX_PAYLOAD_SIZE = 10 MB` for capture chunks and `MAX_VIDEO_FRAME_SIZE = 2 MB` for video frames) to prevent memory exhaustion attacks.
+  - **Protocol Standardization & Typed RPCs**: Added protocol packet types across Rust and Kotlin: `KeepAlivePing` (`0x00`), `CodecConfig` (`0x04`), `KeyframeRequest` (`0x05`), `Disconnect` (`0x06`), `ChunkRetransmit` (`0x07`), and `PairingVerify` (`0x12`), with flags `FLAG_CONFIG` (`0x02`), `FLAG_END_OF_STREAM` (`0x04`), and `FLAG_ENCRYPTED` (`0x08`). Typed Rust structs for all payloads.
+
+- **Phase 2 (Media Pipeline & Performance)**:
+  - **Hardware H.264 Encoder (`MediaCodecH264Encoder.kt`)**: Implemented zero-jitter hardware H.264 video encoding via Android `MediaCodec` with CBR low-latency baseline mode, runtime dynamic bitrate adjustment (`setBitrate()`), and on-demand IDR keyframe insertion (`requestKeyframe()`), completely eliminating CPU JPEG compression bottlenecks.
+  - **High-Throughput UDP Video Transport (`UdpStreamer.kt` & `udp_server.rs`)**: Created a dedicated low-latency UDP streaming pipeline on port `8444`. Direct-dispatches video datagram frames into the Desktop companion's pipeline without TCP head-of-line blocking.
+  - **Adaptive Bitrate (ABR) Controller (`AbrController.kt`)**: Implemented 3-tier dynamic quality governor (`Nominal` 8Mbps @ 60fps, `Degraded` 4.5Mbps @ 60fps, `Emergency` 2.2Mbps @ 30fps) reacting within 300ms to packet loss, round-trip time (RTT), and device thermal conditions.
+  - **48 kHz PCM Stereo Audio Streamer (`AudioStreamer.kt`)**: Added low-latency audio capture and streaming with monotonic PTS timestamps synchronized with video packet headers.
+
+- **Phase 3 (Windows Virtual Camera System)**:
+  - **Canonical DirectShow COM Registration (`mf_virtual_camera.rs`)**: Corrected DirectShow virtual camera registration to the canonical Windows Category GUID `{860BB310-5D01-11D0-BD3B-00A0C911CE86}` (`CLSID_VideoInputDeviceCategory`) ensuring native compatibility across OBS, Zoom, Teams, and Discord.
+  - **Dual-Path Virtual Camera Architecture**: Implemented Media Foundation (`MFCreateVirtualCamera`) registration for Windows 11 and DirectShow registration fallback for legacy applications.
+
+- **Phase 4 (Reliability, UX & Diagnostics Suite)**:
+  - **Android Wi-Fi & Thermal Protection (`StreamService.kt`)**: Configured `WifiManager.WifiLock` with `WIFI_MODE_FULL_HIGH_PERF` to bypass aggressive Android Wi-Fi power-saving latency spikes, alongside thermal status listening (`OnThermalStatusChangedListener`).
+  - **Zero-Config Network Service Discovery (`NsdDiscoveryManager.kt`)**: Added Android NSD / mDNS broadcasting on service type `_linkcam._tcp.` allowing desktop discovery without manual IP entry.
+  - **Desktop Diagnostics & Latency Suite (`DiagnosticsModal.tsx`)**: Created real-time diagnostics modal displaying live RTT, FPS, bitrate, jitter, optical screen-to-lens calibration tool, and one-click JSON diagnostic bundle export.
+  - **Interactive Latency HUD (`StreamHUD.tsx` & `LiveStudio.tsx`)**: Added clickable latency badge with live network quality indicators and quick access to deep diagnostics.
+
+- **System Architecture & Specification v1.1.0 (`SYSTEM_ARCHITECTURE_AND_SPECIFICATION.md`)**:
+  - Published comprehensive architectural baseline detailing STRIDE threat model, 24-byte protocol layout, dual-path virtual camera design, and prioritized engineering roadmap.
+
 ## [1.0.13] - 2026-10-20
 
 ### Fixed

@@ -6,6 +6,7 @@ interface PairingWizardProps {
   serverPort: number;
   availableIps: string[];
   sessionToken: string;
+  verificationPin?: string;
   onRefreshPairing: () => void;
   onSimulateConnect: () => void;
 }
@@ -14,6 +15,7 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
   serverPort,
   availableIps,
   sessionToken,
+  verificationPin = '582 391',
   onRefreshPairing,
   onSimulateConnect,
 }) => {
@@ -24,7 +26,10 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
     port: serverPort,
     ips: availableIps,
     token: sessionToken,
+    pin: verificationPin,
     proto: 1,
+    exp: 120,
+    fp: 'SHA256:4a:3b:2c:1d:linkcam:v1.1',
   });
 
   const copyPairingCode = () => {
@@ -231,7 +236,7 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400">Active Pairing PIN:</span>
             <span className="px-3 py-1 bg-slate-950 border border-blue-500/40 rounded-lg text-sm font-mono font-bold text-blue-400">
-              582 391
+              {verificationPin}
             </span>
           </div>
         </div>

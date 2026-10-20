@@ -120,9 +120,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setupStreamer() {
-        cameraStreamer = CameraStreamer(this, this) { frameBytes, isKeyframe, timestamp ->
-            socketTransport?.sendVideoFrame(frameBytes, isKeyframe, timestamp)
-        }
+        cameraStreamer = CameraStreamer(
+            context = this,
+            lifecycleOwner = this,
+            onCodecConfig = { configBytes ->
+                val configJson = """{"codec":"H264","width":1920,"height":1080,"fps":60,"spsPpsSize":${configBytes.size}}"""
+                socketTransport?.sendCodecConfig(configJson)
+            },
+            onFrameEncoded = { frameBytes, isKeyframe, timestamp ->
+                socketTransport?.sendVideoFrame(frameBytes, isKeyframe, timestamp)
+            }
+        )
         cameraStreamer?.start()
     }
 

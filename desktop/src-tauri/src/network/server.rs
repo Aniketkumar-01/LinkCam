@@ -51,6 +51,10 @@ impl NetworkServer {
         self.session.clone()
     }
 
+    pub fn get_video_frame_tx(&self) -> broadcast::Sender<Packet> {
+        self.video_frame_tx.clone()
+    }
+
     pub async fn send_camera_control(&self, cmd: CameraControl) -> Result<(), mpsc::error::SendError<CameraControl>> {
         self.control_tx.send(cmd).await
     }
@@ -80,6 +84,17 @@ impl NetworkServer {
         mut stream: TcpStream,
         peer_addr: SocketAddr,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Enforce private subnet only (LAN, Hotspot, Loopback)
+        let is_private = match peer_addr.ip() {
+            std::net::IpAddr::V4(v4) => v4.is_private() || v4.is_loopback() || v4.is_link_local(),
+            std::net::IpAddr::V6(v6) => v6.is_loopback(),
+        };
+
+        if !is_private {
+            eprintln!("[LinkCam Security] Dropped connection from non-private IP: {}", peer_addr);
+            return Ok(());
+        }
+
         // Peek first 4 bytes to check if client is connecting via raw TCP ("LNKC") or WebSocket ("GET ")
         let mut peek_buf = [0u8; 4];
         stream.peek(&mut peek_buf).await?;
@@ -99,7 +114,7 @@ impl NetworkServer {
     async fn handle_raw_tcp(
         &self,
         mut stream: TcpStream,
-        _peer_addr: SocketAddr,
+        peer_addr: SocketAddr,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let (mut reader, mut writer) = stream.split();
         let mut header_buf = [0u8; HEADER_SIZE];
@@ -121,21 +136,30 @@ impl NetworkServer {
         let mut payload = vec![0u8; header.payload_length as usize];
         reader.read_exact(&mut payload).await?;
 
-        // Authenticate token
+        // Authenticate token with IP rate-limiting and expiration
         let auth_str = String::from_utf8_lossy(&payload);
         let parts: Vec<&str> = auth_str.split(':').collect();
         if parts.len() < 2 {
             return Ok(());
         }
 
-        let is_valid = {
-            let pairing = self.pairing_mgr.read().await;
-            pairing.validate_token(parts[0], parts[1])
+        let auth_res = {
+            let mut pairing = self.pairing_mgr.write().await;
+            pairing.validate_token(peer_addr.ip(), parts[0], parts[1])
         };
 
-        if !is_valid {
-            eprintln!("[LinkCam] Authentication failed for client");
-            return Ok(());
+        match auth_res {
+            Ok(true) => {}
+            Err(err_msg) => {
+                eprintln!("[LinkCam] Authentication failed for {}: {}", peer_addr, err_msg);
+                let resp_header = PacketHeader::new(PacketType::PairingAuthResponse, 1, 0, err_msg.len() as u32);
+                let mut resp_buf = Vec::new();
+                resp_header.write_to(&mut resp_buf)?;
+                resp_buf.extend_from_slice(err_msg.as_bytes());
+                let _ = writer.write_all(&resp_buf).await;
+                return Ok(());
+            }
+            _ => return Ok(()),
         }
 
         // Send PairingAuthResponse success
@@ -177,6 +201,17 @@ impl NetworkServer {
             let packet = Packet::new(hdr.clone(), body);
 
             match hdr.packet_type {
+                PacketType::KeepAlivePing => {
+                    let pong_header = PacketHeader::new(PacketType::KeepAlivePing, hdr.sequence, hdr.timestamp, 0);
+                    let mut pong_buf = Vec::new();
+                    if pong_header.write_to(&mut pong_buf).is_ok() {
+                        let _ = writer.write_all(&pong_buf).await;
+                    }
+                }
+                PacketType::Disconnect => {
+                    eprintln!("[LinkCam] Graceful disconnect received from {}", peer_addr);
+                    break;
+                }
                 PacketType::VideoFrame => {
                     let _ = self.video_frame_tx.send(packet);
                 }
@@ -218,6 +253,18 @@ impl NetworkServer {
             if let Message::Binary(bin) = msg {
                 if let Ok(packet) = Packet::from_bytes(&bin) {
                     match packet.header.packet_type {
+                        PacketType::KeepAlivePing => {
+                            let pong = Packet::new(
+                                PacketHeader::new(PacketType::KeepAlivePing, packet.header.sequence, packet.header.timestamp, 0),
+                                Vec::new(),
+                            );
+                            if let Ok(bytes) = pong.to_bytes() {
+                                let _ = ws.send(Message::Binary(bytes)).await;
+                            }
+                        }
+                        PacketType::Disconnect => {
+                            break;
+                        }
                         PacketType::VideoFrame => {
                             let _ = self.video_frame_tx.send(packet);
                         }

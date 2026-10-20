@@ -23,12 +23,14 @@ enum class CameraLens {
 class CameraStreamer(
     private val context: Context,
     private val lifecycleOwner: LifecycleOwner,
+    private val onCodecConfig: ((ByteArray) -> Unit)? = null,
     private val onFrameEncoded: (ByteArray, Boolean, Long) -> Unit
 ) {
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
     private var imageAnalysis: ImageAnalysis? = null
     private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var h264Encoder: MediaCodecH264Encoder? = null
 
     private var currentLens: CameraLens = CameraLens.REAR_WIDE
     private var isTorchEnabled: Boolean = false
@@ -46,6 +48,17 @@ class CameraStreamer(
     private fun bindCameraUseCases() {
         val provider = cameraProvider ?: return
         provider.unbindAll()
+
+        // Initialize or reconfigure hardware H.264 encoder
+        h264Encoder?.release()
+        h264Encoder = MediaCodecH264Encoder(
+            width = targetResolution.width,
+            height = targetResolution.height,
+            bitrateBps = 8_000_000,
+            fps = 60,
+            onCodecConfig = { configBytes -> onCodecConfig?.invoke(configBytes) },
+            onFrameEncoded = onFrameEncoded
+        )
 
         val cameraSelector = when (currentLens) {
             CameraLens.FRONT -> CameraSelector.DEFAULT_FRONT_CAMERA
@@ -78,17 +91,31 @@ class CameraStreamer(
         val timestamp = imageProxy.imageInfo.timestamp
         frameSequence++
 
-        // Convert YUV_420_888 to high-performance JPEG stream frame
         val nv21 = yuv420ToNv21(imageProxy)
-        val yuvImage = YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, intArrayOf(imageProxy.width, imageProxy.width))
-        val out = ByteArrayOutputStream()
-        yuvImage.compressToJpeg(Rect(0, 0, imageProxy.width, imageProxy.height), 85, out)
+        val encoder = h264Encoder
+        if (encoder != null) {
+            // Hardware-accelerated H.264 encoding path
+            encoder.encodeFrame(nv21, timestamp)
+        } else {
+            // Fallback: CPU compressed JPEG stream frame
+            val yuvImage = YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, intArrayOf(imageProxy.width, imageProxy.width))
+            val out = ByteArrayOutputStream()
+            yuvImage.compressToJpeg(Rect(0, 0, imageProxy.width, imageProxy.height), 85, out)
 
-        val frameBytes = out.toByteArray()
-        val isKeyframe = (frameSequence % 30L == 0L)
+            val frameBytes = out.toByteArray()
+            val isKeyframe = (frameSequence % 30L == 0L)
+            onFrameEncoded(frameBytes, isKeyframe, timestamp / 1_000_000L)
+        }
 
-        onFrameEncoded(frameBytes, isKeyframe, timestamp)
         imageProxy.close()
+    }
+
+    fun requestKeyframe() {
+        h264Encoder?.requestKeyframe()
+    }
+
+    fun setBitrate(bitrateBps: Int) {
+        h264Encoder?.setBitrate(bitrateBps)
     }
 
     fun setLens(lens: CameraLens) {
@@ -112,6 +139,8 @@ class CameraStreamer(
     }
 
     fun stop() {
+        h264Encoder?.release()
+        h264Encoder = null
         cameraProvider?.unbindAll()
         cameraExecutor.shutdown()
     }

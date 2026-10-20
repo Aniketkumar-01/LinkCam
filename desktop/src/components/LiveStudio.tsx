@@ -14,6 +14,7 @@ interface LiveStudioProps {
   isVcamActive: boolean;
   onTriggerPhoto: () => void;
   onTriggerDocumentScan: () => void;
+  onOpenDiagnostics?: () => void;
 }
 
 export const LiveStudio: React.FC<LiveStudioProps> = ({
@@ -27,6 +28,7 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
   isVcamActive,
   onTriggerPhoto,
   onTriggerDocumentScan,
+  onOpenDiagnostics,
 }) => {
   const [lens, setLens] = useState<CameraLensType>('RearWide');
   const [torch, setTorch] = useState(false);
@@ -80,6 +82,7 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
               isCharging={isCharging}
               connectionMode={connectionMode}
               isVcamActive={isVcamActive}
+              onOpenDiagnostics={onOpenDiagnostics}
             />
 
             {/* Viewfinder Tool Overlay (Bottom Right of Canvas) */}

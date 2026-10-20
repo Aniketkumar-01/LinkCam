@@ -6,7 +6,7 @@ mod vcam;
 
 use capture::{CaptureReceiver, DeliveredCaptureEvent};
 use linkcam_protocol::{CameraControl, CameraLens, CaptureMode, ConnectionMode, TelemetryHeartbeat};
-use network::{ClientSession, NetworkServer, PairingManager, PairingPayload, SessionState};
+use network::{ClientSession, NetworkServer, PairingManager, PairingPayload, SessionState, UdpVideoServer};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use vcam::{VirtualCameraDevice, VirtualCameraSink};
@@ -76,7 +76,15 @@ fn main() {
                 }
             });
 
-            println!("[LinkCam] Companion engine ready. QR Pairing available on port 8443.");
+            // Start UDP video datagram server on port 8444 (zero-HOL blocking)
+            let udp_srv = Arc::new(UdpVideoServer::new(8444, server_arc.get_video_frame_tx()));
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = udp_srv.start().await {
+                    eprintln!("[LinkCam] UDP video server error: {:?}", e);
+                }
+            });
+
+            println!("[LinkCam] Companion engine ready. QR Pairing on 8443, UDP video stream on 8444.");
             Ok(())
         })
         .run(tauri::generate_context!())
