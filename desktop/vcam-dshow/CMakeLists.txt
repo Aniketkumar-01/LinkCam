@@ -10,6 +10,7 @@ add_library(LinkCamDShow64 SHARED
 )
 
 target_link_libraries(LinkCamDShow64 PRIVATE
+    strmiids
     ole32
     oleaut32
     user32

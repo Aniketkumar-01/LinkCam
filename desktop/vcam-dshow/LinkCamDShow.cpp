@@ -186,7 +186,7 @@ public:
     // IUnknown
     STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
         if (!ppv) return E_POINTER;
-        if (riid == IID_IUnknown || riid == IID_IPersist || riid == IID_IMediaFilter || riid == IID_IBaseFilter) {
+        if (riid == IID_IUnknown || riid == IID_IPersist || riid == __uuidof(IMediaFilter) || riid == __uuidof(IBaseFilter)) {
             *ppv = static_cast<IBaseFilter*>(this);
             AddRef();
             return S_OK;
@@ -263,7 +263,7 @@ LinkCamOutputPin::~LinkCamOutputPin() {
 
 STDMETHODIMP LinkCamOutputPin::QueryInterface(REFIID riid, void** ppv) {
     if (!ppv) return E_POINTER;
-    if (riid == IID_IUnknown || riid == IID_IPin) {
+    if (riid == IID_IUnknown || riid == __uuidof(IPin)) {
         *ppv = static_cast<IPin*>(this);
         AddRef();
         return S_OK;
@@ -284,7 +284,7 @@ STDMETHODIMP LinkCamOutputPin::Connect(IPin* pReceivePin, const AM_MEDIA_TYPE* p
     m_pConnectedPin = pReceivePin;
     m_pConnectedPin->AddRef();
 
-    pReceivePin->QueryInterface(IID_IMemInputPin, (void**)&m_pInputPin);
+    pReceivePin->QueryInterface(__uuidof(IMemInputPin), (void**)&m_pInputPin);
     if (m_pInputPin) {
         m_pInputPin->GetAllocator(&m_pAllocator);
         if (m_pAllocator) {
@@ -479,7 +479,7 @@ public:
 
     STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
         if (!ppv) return E_POINTER;
-        if (riid == IID_IUnknown || riid == IID_IEnumPins) { *ppv = this; AddRef(); return S_OK; }
+        if (riid == IID_IUnknown || riid == __uuidof(IEnumPins)) { *ppv = this; AddRef(); return S_OK; }
         *ppv = NULL;
         return E_NOINTERFACE;
     }

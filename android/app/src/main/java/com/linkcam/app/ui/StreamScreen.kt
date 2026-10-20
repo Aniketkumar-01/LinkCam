@@ -1,8 +1,23 @@
 package com.linkcam.app.ui
 
-import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.ViewGroup
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.linkcam.app.camera.CameraLens
@@ -24,7 +39,7 @@ fun StreamScreen(
     onTriggerPhoto: () -> Unit,
     onEnterMeetingMode: () -> Unit,
     onDisconnect: () -> Unit,
-    onSurfaceReady: (Surface) -> Unit = {},
+    onSurfaceReady: (android.view.Surface) -> Unit = {},
     onSurfaceDestroyed: () -> Unit = {}
 ) {
     Box(
