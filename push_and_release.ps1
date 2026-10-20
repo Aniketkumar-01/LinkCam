@@ -1,6 +1,6 @@
 param(
     [string]$Tag = "v1.0.6",
-    [string]$Message = "Release v1.0.6: Fix APK renaming step in CI, enhance Inno Setup discovery, and publish Android and Windows binaries"
+    [string]$Message = "Release v1.0.6: Fix Kotlin Float literal mismatch in StreamScreen, stabilize APK packaging, and publish Windows installer"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -27,7 +27,7 @@ Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
 Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
-git commit -m "fix(ci): fix apk renaming step in release workflow and bump to $Tag"
+git commit -m "fix(android): fix Float literal in StreamScreen and stabilize CI release workflow ($Tag)"
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow

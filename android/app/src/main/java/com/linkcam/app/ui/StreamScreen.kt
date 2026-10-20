@@ -53,7 +53,7 @@ fun StreamScreen(
                 modifier = Modifier
                     .size(72.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(alpha = 0.04)),
+                    .background(Color.White.copy(alpha = 0.04f)),
                 contentAlignment = Alignment.Center
             ) {
                 Box(

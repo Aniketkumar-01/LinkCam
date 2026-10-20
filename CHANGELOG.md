@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.6] - 2026-10-20
 
 ### Fixed
+- **Kotlin Float Type Mismatch in StreamScreen**: Fixed compilation error in `:app:compileDebugKotlin` (`The floating-point literal does not conform to the expected type Float`) at `StreamScreen.kt:56` where `Color.White.copy(alpha = 0.04)` was inferred as `Double`. Added explicit `0.04f` literal suffix.
 - **APK Release Artifact Packaging**: Resolved GitHub Actions failure in the `Rename APK for Release` step by checking Gradle's standard output paths (`android/app/build/outputs/apk/debug/app-debug.apk`) directly with fallback search logic, eliminating shell argument and semicolon escaping errors previously caused by `find -exec`.
 - **Inno Setup ISCC Path Discovery**: Added dynamic path resolution for Inno Setup compiler (`ISCC.exe`) across 64-bit and 32-bit Program Files directories and system environment PATH.
 - **Workflow Artifact Uploads**: Added `upload-artifact@v4` action to the Windows Companion build job, ensuring both `LinkCam-Windows-Setup.exe` and `LinkCam-Windows-Portable.exe` can be downloaded directly from GitHub Actions workflow summaries.

@@ -33,7 +33,7 @@ git add .
 
 REM 5. Commit changes
 echo [*] Committing !TAG! release...
-git commit -m "fix(ci): fix apk renaming step in release workflow and bump to !TAG!"
+git commit -m "fix(android): fix Float literal in StreamScreen and stabilize CI release workflow (!TAG!)"
 
 REM 6. Push to main branch
 echo [*] Pushing to GitHub (main)...
