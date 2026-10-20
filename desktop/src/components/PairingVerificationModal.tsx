@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Smartphone, ShieldCheck, Check, X, Wifi, AlertTriangle } from 'lucide-react';
+import { Smartphone, ShieldCheck, Check, X, Wifi } from 'lucide-react';
 
 export interface PendingPairingRequest {
   id: string;

@@ -84,13 +84,15 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleAcceptPairing = (_req: PendingPairingRequest, _trust: boolean) => {
+  const handleAcceptPairing = (req: PendingPairingRequest, trust: boolean) => {
+    console.log('Pairing accepted for', req.deviceName, 'trusted:', trust);
     setPendingPairing(null);
     setIsConnected(true);
     setActiveTab('studio');
   };
 
-  const handleDeclinePairing = (_req: PendingPairingRequest) => {
+  const handleDeclinePairing = (req: PendingPairingRequest) => {
+    console.log('Pairing declined for', req.deviceName);
     setPendingPairing(null);
     setIsConnected(false);
   };

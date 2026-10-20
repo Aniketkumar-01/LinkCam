@@ -5,6 +5,11 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9] - 2026-10-20
+
+### Fixed
+- **Desktop UI TypeScript Strict Compliance**: Added missing `ShieldCheck` icon import in `PairingWizard.tsx`, removed unused `AlertTriangle` in `PairingVerificationModal.tsx`, and updated pairing callback arguments in `App.tsx` to satisfy `strict`, `noUnusedLocals`, and `noUnusedParameters` rules.
+
 ## [1.0.8] - 2026-10-20
 
 ### Fixed
