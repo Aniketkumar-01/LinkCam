@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.0.11",
-    [string]$Message = "Release v1.0.11: True standalone native desktop app using Tauri v2, system virtual camera, and pairing verification"
+    [string]$Tag = "v1.0.12",
+    [string]$Message = "Release v1.0.12: Standalone native desktop app with embedded Tauri v2 assets, Windows icon resources, DirectShow virtual camera, and pairing verification"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan

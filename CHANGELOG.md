@@ -5,6 +5,13 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.12] - 2026-10-20
+
+### Fixed
+- **Tauri v2 Windows Icon Generation & Manifest Integration**: Added `generate-icons.cjs` and automated Rust build hook in `build.rs` to generate and embed `32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.icns`, and `icon.ico` directly into the Windows executable and installer, resolving the missing icon error (`ico not found; required for generating a Windows Resource file during tauri-build`).
+- **Tauri v2 Window Label & Capabilities**: Defined explicit window label `main` in `tauri.conf.json` and added `capabilities/default.json` with `core:default` permissions to comply with Tauri v2 security specification.
+- **Inno Setup & Release Pipeline Synchronization**: Synced `installer.iss`, `push_and_release.ps1`, and `push_and_release.bat` to `v1.0.12`.
+
 ## [1.0.11] - 2026-10-20
 
 ### Added

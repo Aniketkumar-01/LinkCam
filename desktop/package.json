@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "node generate-icons.cjs && tsc && vite build",
+    "generate-icons": "node generate-icons.cjs",
     "preview": "vite preview"
   },
   "dependencies": {
