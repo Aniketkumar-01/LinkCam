@@ -90,6 +90,8 @@ class DocumentScanner {
             fileBytes = fileBytes,
             sha256Checksum = checksum
         )
+    }
+
     companion object {
         /**
          * Checks whether Google Play Services is available and operational on this device.

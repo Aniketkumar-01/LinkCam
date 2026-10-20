@@ -1,12 +1,29 @@
 // LinkCam DirectShow Virtual Camera Filter DLL
 // Lightweight, native Windows COM InprocServer32 bridge reading from Local\LinkCam_Video_Shm
 
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
-#include <dshow.h>
 #include <initguid.h>
+#include <dshow.h>
 #include <cstdint>
 #include <atomic>
 #include <algorithm>
+
+#ifndef __IKsPropertySet_INTERFACE_DEFINED__
+#define __IKsPropertySet_INTERFACE_DEFINED__
+interface DECLSPEC_UUID("31efac30-515c-11d0-a9aa-00aa0061be93") DECLSPEC_NOVTABLE
+IKsPropertySet : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE Set(REFGUID guidPropSet, DWORD dwPropID, LPVOID pInstanceData, DWORD cbInstanceData, LPVOID pPropData, DWORD cbPropData) = 0;
+    virtual HRESULT STDMETHODCALLTYPE Get(REFGUID guidPropSet, DWORD dwPropID, LPVOID pInstanceData, DWORD cbInstanceData, LPVOID pPropData, DWORD cbPropData, DWORD *pcbReturned) = 0;
+    virtual HRESULT STDMETHODCALLTYPE QuerySupported(REFGUID guidPropSet, DWORD dwPropID, DWORD *pTypeSupport) = 0;
+};
+#endif
+
+#ifndef IID_IKsPropertySet
+DEFINE_GUID(IID_IKsPropertySet,
+    0x31efac30, 0x515c, 0x11d0, 0xa9, 0xaa, 0x00, 0xaa, 0x00, 0x61, 0xbe, 0x93);
+#endif
 
 #ifndef KSPROPERTY_SUPPORT_GET
 #define KSPROPERTY_SUPPORT_GET 1
@@ -251,7 +268,7 @@ STDMETHODIMP LinkCamOutputPin::QueryInterface(REFIID riid, void** ppv) {
         AddRef();
         return S_OK;
     }
-    if (riid == IID_IKsPropertySet) {
+    if (riid == IID_IKsPropertySet || riid == __uuidof(IKsPropertySet)) {
         *ppv = static_cast<IKsPropertySet*>(this);
         AddRef();
         return S_OK;
