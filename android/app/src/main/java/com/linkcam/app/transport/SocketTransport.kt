@@ -12,9 +12,88 @@ import java.net.Socket
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
-import javax.crypto.Cipher
-import javax.crypto.spec.ChaCha20ParameterSpec
-import javax.crypto.spec.SecretKeySpec
+
+internal object ChaCha20Cipher {
+    private fun rotl(v: Int, c: Int): Int = (v shl c) or (v ushr (32 - c))
+
+    private fun quarterRound(x: IntArray, a: Int, b: Int, c: Int, d: Int) {
+        x[a] += x[b]
+        x[d] = rotl(x[d] xor x[a], 16)
+        x[c] += x[d]
+        x[b] = rotl(x[b] xor x[c], 12)
+        x[a] += x[b]
+        x[d] = rotl(x[d] xor x[a], 8)
+        x[c] += x[d]
+        x[b] = rotl(x[b] xor x[c], 7)
+    }
+
+    fun crypt(data: ByteArray, key: ByteArray, nonce: ByteArray, initialCounter: Int = 1): ByteArray {
+        val output = ByteArray(data.size)
+        val state = IntArray(16)
+        var counter = initialCounter
+
+        val c0 = 0x61707865
+        val c1 = 0x3320646e
+        val c2 = 0x79622d32
+        val c3 = 0x6b206574
+
+        val k = IntArray(8)
+        for (i in 0 until 8) {
+            k[i] = (key[i * 4].toInt() and 0xFF) or
+                    ((key[i * 4 + 1].toInt() and 0xFF) shl 8) or
+                    ((key[i * 4 + 2].toInt() and 0xFF) shl 16) or
+                    ((key[i * 4 + 3].toInt() and 0xFF) shl 24)
+        }
+
+        val n = IntArray(3)
+        for (i in 0 until 3) {
+            n[i] = (nonce[i * 4].toInt() and 0xFF) or
+                    ((nonce[i * 4 + 1].toInt() and 0xFF) shl 8) or
+                    ((nonce[i * 4 + 2].toInt() and 0xFF) shl 16) or
+                    ((nonce[i * 4 + 3].toInt() and 0xFF) shl 24)
+        }
+
+        val working = IntArray(16)
+        val block = ByteArray(64)
+        var offset = 0
+
+        while (offset < data.size) {
+            state[0] = c0; state[1] = c1; state[2] = c2; state[3] = c3
+            System.arraycopy(k, 0, state, 4, 8)
+            state[12] = counter
+            System.arraycopy(n, 0, state, 13, 3)
+            System.arraycopy(state, 0, working, 0, 16)
+
+            for (r in 0 until 10) {
+                quarterRound(working, 0, 4, 8, 12)
+                quarterRound(working, 1, 5, 9, 13)
+                quarterRound(working, 2, 6, 10, 14)
+                quarterRound(working, 3, 7, 11, 15)
+                quarterRound(working, 0, 5, 10, 15)
+                quarterRound(working, 1, 6, 11, 12)
+                quarterRound(working, 2, 7, 8, 13)
+                quarterRound(working, 3, 4, 9, 14)
+            }
+
+            for (i in 0 until 16) {
+                val sum = working[i] + state[i]
+                block[i * 4] = (sum and 0xFF).toByte()
+                block[i * 4 + 1] = ((sum ushr 8) and 0xFF).toByte()
+                block[i * 4 + 2] = ((sum ushr 16) and 0xFF).toByte()
+                block[i * 4 + 3] = ((sum ushr 24) and 0xFF).toByte()
+            }
+
+            val chunkSize = Math.min(64, data.size - offset)
+            for (i in 0 until chunkSize) {
+                output[offset + i] = (data[offset + i].toInt() xor block[i].toInt()).toByte()
+            }
+
+            counter++
+            offset += chunkSize
+        }
+        return output
+    }
+}
 
 enum class ConnectionStatus {
     DISCONNECTED,
@@ -49,9 +128,7 @@ class SocketTransport(
                 .putInt(sequence)
                 .putLong(timestamp)
                 .array()
-            val cipher = Cipher.getInstance("ChaCha20")
-            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "ChaCha20"), ChaCha20ParameterSpec(nonce, 1))
-            cipher.doFinal(payload)
+            ChaCha20Cipher.crypt(payload, key, nonce, initialCounter = 1)
         } catch (e: Exception) {
             payload
         }

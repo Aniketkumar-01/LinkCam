@@ -253,10 +253,6 @@ class CameraStreamer(
         h264Encoder?.requestKeyframe()
     }
 
-    fun setBitrate(bitrateBps: Int) {
-        h264Encoder?.setBitrate(bitrateBps)
-    }
-
     fun stop() {
         try {
             captureSession?.close()
