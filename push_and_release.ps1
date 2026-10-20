@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.0.7",
-    [string]$Message = "Release v1.0.7: Standalone Windows GUI app, DirectShow Virtual Camera registration, and pairing verification modal"
+    [string]$Tag = "v1.0.8",
+    [string]$Message = "Release v1.0.8: Fix desktop JSX syntax in PairingWizard, enable standalone GUI app, and system vcam"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -27,7 +27,7 @@ Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
 Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
-git commit -m "feat(desktop): standalone GUI app mode, system vcam registration, and pairing verification ($Tag)"
+git commit -m "fix(desktop): fix pairing wizard JSX syntax error and bump to $Tag"
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow

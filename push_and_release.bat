@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 set TAG=%1
-if "%TAG%"=="" set TAG=v1.0.7
+if "%TAG%"=="" set TAG=v1.0.8
 
 echo ========================================================
 echo   LinkCam - Git Push and Release Automation (!TAG!)
@@ -33,7 +33,7 @@ git add .
 
 REM 5. Commit changes
 echo [*] Committing !TAG! release...
-git commit -m "feat(desktop): standalone GUI app mode, system vcam registration, and pairing verification (!TAG!)"
+git commit -m "fix(desktop): fix pairing wizard JSX syntax error and bump to !TAG!"
 
 REM 6. Push to main branch
 echo [*] Pushing to GitHub (main)...

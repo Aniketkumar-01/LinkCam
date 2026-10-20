@@ -5,6 +5,11 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2026-10-20
+
+### Fixed
+- **Desktop UI JSX Syntax Error**: Fixed TS1005 TypeScript compilation error in `PairingWizard.tsx` by properly closing the mode selection ternary block and restoring the USB mode instruction card.
+
 ## [1.0.7] - 2026-10-20
 
 ### Added

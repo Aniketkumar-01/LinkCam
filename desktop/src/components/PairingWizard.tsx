@@ -176,6 +176,45 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
             </div>
           </div>
         </div>
+      ) : (
+        /* USB Wired Instructions */
+        <div className="fluent-card p-6 rounded-2xl space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <Usb className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-100">Wired USB Plug-and-Play</h3>
+              <p className="text-xs text-slate-400">Highest bandwidth, lowest latency (&lt;40ms), and charges your phone simultaneously.</p>
+            </div>
+          </div>
+
+          <ol className="space-y-3 text-xs text-slate-300">
+            <li className="flex gap-3">
+              <span className="font-mono text-amber-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">1</span>
+              <span>Connect your phone to your PC with a high-speed USB-C cable (USB 3.0 recommended).</span>
+            </li>
+            <li className="flex gap-3">
+              <span className="font-mono text-amber-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
+              <span>Enable <strong>USB Debugging</strong> or USB Tethering in your phone's Developer Options.</span>
+            </li>
+            <li className="flex gap-3">
+              <span className="font-mono text-amber-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">3</span>
+              <span>LinkCam will automatically detect the device and establish the video pipe.</span>
+            </li>
+          </ol>
+
+          <div className="pt-2">
+            <button
+              onClick={onSimulateConnect}
+              className="fluent-btn-primary py-2.5 px-6 text-xs font-semibold flex items-center gap-2"
+            >
+              <span>Connect via USB</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Device Security & Pairing Policy */}
       <div className="fluent-card p-6 rounded-2xl space-y-5 border border-white/[0.08]">
         <div className="flex items-center justify-between">
