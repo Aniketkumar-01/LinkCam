@@ -72,8 +72,9 @@ class CameraStreamer(
     }
 
     fun setPreviewSurface(surface: Surface?) {
+        if (this.previewSurface == surface) return
         this.previewSurface = surface
-        if (cameraDevice != null) {
+        if (cameraDevice != null && surface?.isValid == true) {
             startCaptureSession()
         }
     }
@@ -106,14 +107,22 @@ class CameraStreamer(
                 }
 
                 override fun onDisconnected(camera: CameraDevice) {
-                    camera.close()
+                    try { camera.close() } catch (_: Exception) {}
                     cameraDevice = null
                 }
 
                 override fun onError(camera: CameraDevice, error: Int) {
                     Log.e(TAG, "Camera open error: $error")
-                    camera.close()
+                    try { camera.close() } catch (_: Exception) {}
                     cameraDevice = null
+                    if (error == CameraDevice.StateCallback.ERROR_CAMERA_IN_USE) {
+                        Log.w(TAG, "Camera in use, retrying open in 350ms...")
+                        backgroundHandler?.postDelayed({
+                            if (cameraDevice == null) {
+                                start()
+                            }
+                        }, 350)
+                    }
                 }
             }, backgroundHandler)
         } catch (e: Exception) {
@@ -155,10 +164,18 @@ class CameraStreamer(
         val encoderSurface = h264Encoder?.inputSurface ?: return
 
         try {
-            captureSession?.close()
+            try {
+                captureSession?.close()
+            } catch (_: Exception) {}
+            captureSession = null
 
             val surfaces = mutableListOf<Surface>()
-            surfaces.add(encoderSurface)
+            if (encoderSurface.isValid) {
+                surfaces.add(encoderSurface)
+            } else {
+                Log.e(TAG, "Encoder surface is not valid")
+                return
+            }
 
             val prev = previewSurface
             if (prev != null && prev.isValid && !isMeetingModeActive) {
@@ -166,25 +183,36 @@ class CameraStreamer(
             }
 
             if (includeImageReader) {
-                imageReader?.surface?.let { surfaces.add(it) }
+                val readerSurf = imageReader?.surface
+                if (readerSurf != null && readerSurf.isValid) {
+                    surfaces.add(readerSurf)
+                }
             }
 
             camera.createCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
                     if (cameraDevice == null) return
                     captureSession = session
-                    val requestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
-                        addTarget(encoderSurface)
-                        if (prev != null && prev.isValid && !isMeetingModeActive) {
-                            addTarget(prev)
+                    try {
+                        val encSurface = h264Encoder?.inputSurface
+                        if (encSurface == null || !encSurface.isValid) return
+
+                        val requestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                            addTarget(encSurface)
+                            val currentPrev = previewSurface
+                            if (currentPrev != null && currentPrev.isValid && !isMeetingModeActive) {
+                                addTarget(currentPrev)
+                            }
+                            set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+                            set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
+                            if (isTorchEnabled) {
+                                set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH)
+                            }
                         }
-                        set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-                        set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
-                        if (isTorchEnabled) {
-                            set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH)
-                        }
+                        session.setRepeatingRequest(requestBuilder.build(), null, backgroundHandler)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error configuring repeating request: ${e.message}", e)
                     }
-                    session.setRepeatingRequest(requestBuilder.build(), null, backgroundHandler)
                 }
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
@@ -196,7 +224,7 @@ class CameraStreamer(
                 }
             }, backgroundHandler)
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting capture session", e)
+            Log.e(TAG, "Error starting capture session: ${e.message}", e)
             if (includeImageReader) {
                 Log.i(TAG, "Retrying capture session with 2-surface fallback")
                 startCaptureSession(includeImageReader = false)

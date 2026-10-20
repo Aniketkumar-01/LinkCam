@@ -486,6 +486,30 @@ fun QrCameraScanner(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    var cameraProviderRef by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var hasDetectedQr by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                cameraProviderRef?.unbindAll()
+                cameraExecutor.shutdown()
+            } catch (_: Exception) {}
+        }
+    }
+
+    val handleScanned: (String) -> Unit = { raw ->
+        if (!hasDetectedQr) {
+            hasDetectedQr = true
+            // Immediately unbind all CameraX use cases on main thread so hardware camera 0 is released
+            ContextCompat.getMainExecutor(context).execute {
+                try {
+                    cameraProviderRef?.unbindAll()
+                } catch (_: Exception) {}
+                onQrScanned(raw)
+            }
+        }
+    }
 
     AndroidView(
         factory = { ctx ->
@@ -500,6 +524,11 @@ fun QrCameraScanner(
             val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
             cameraProviderFuture.addListener({
                 val cameraProvider = cameraProviderFuture.get()
+                cameraProviderRef = cameraProvider
+
+                if (hasDetectedQr) {
+                    return@addListener
+                }
 
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewView.surfaceProvider)
@@ -511,7 +540,7 @@ fun QrCameraScanner(
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
                     .also { analysis ->
-                        analysis.setAnalyzer(cameraExecutor, QrBarcodeAnalyzer(onQrScanned))
+                        analysis.setAnalyzer(cameraExecutor, QrBarcodeAnalyzer(handleScanned))
                     }
 
                 try {
@@ -560,6 +589,8 @@ fun QrCameraScanner(
 class QrBarcodeAnalyzer(
     private val onQrScanned: (String) -> Unit
 ) : ImageAnalysis.Analyzer {
+    private val isScanningActive = java.util.concurrent.atomic.AtomicBoolean(true)
+
     private val mlKitScanner = BarcodeScanning.getClient(
         BarcodeScannerOptions.Builder()
             .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
@@ -575,6 +606,11 @@ class QrBarcodeAnalyzer(
     private var lastScannedTimestamp = 0L
 
     override fun analyze(imageProxy: ImageProxy) {
+        if (!isScanningActive.get()) {
+            imageProxy.close()
+            return
+        }
+
         val now = System.currentTimeMillis()
         if (now - lastScannedTimestamp < 2500) {
             imageProxy.close()
@@ -594,23 +630,28 @@ class QrBarcodeAnalyzer(
                         if (!raw.isNullOrBlank()) {
                             found = true
                             lastScannedTimestamp = System.currentTimeMillis()
-                            onQrScanned(raw)
+                            if (isScanningActive.compareAndSet(true, false)) {
+                                onQrScanned(raw)
+                            }
                             break
                         }
                     }
-                    if (!found) {
+                    if (!found && isScanningActive.get()) {
                         tryZxingDecode(imageProxy)
                     }
                 }
                 .addOnFailureListener {
-                    // Fallback to ZXing if Google Play Services ML Kit is pending download
-                    tryZxingDecode(imageProxy)
+                    if (isScanningActive.get()) {
+                        tryZxingDecode(imageProxy)
+                    }
                 }
                 .addOnCompleteListener {
                     imageProxy.close()
                 }
         } else {
-            tryZxingDecode(imageProxy)
+            if (isScanningActive.get()) {
+                tryZxingDecode(imageProxy)
+            }
             imageProxy.close()
         }
     }
@@ -634,7 +675,9 @@ class QrBarcodeAnalyzer(
 
             if (!result.text.isNullOrBlank()) {
                 lastScannedTimestamp = System.currentTimeMillis()
-                onQrScanned(result.text)
+                if (isScanningActive.compareAndSet(true, false)) {
+                    onQrScanned(result.text)
+                }
             }
         } catch (_: Exception) {
             // Frame does not contain QR

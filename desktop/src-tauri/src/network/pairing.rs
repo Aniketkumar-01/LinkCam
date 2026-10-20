@@ -46,7 +46,7 @@ impl PairingManager {
             session_id: String::new(),
             verification_pin: String::new(),
             created_at: Instant::now(),
-            token_lifetime: Duration::from_secs(120), // 120-second token lifetime
+            token_lifetime: Duration::from_secs(3600), // 1-hour pairing token lifetime to prevent premature timeouts
             port,
             device_name,
             cert_fingerprint: "SHA256:4a:3b:2c:1d:linkcam:v1.1".to_string(),

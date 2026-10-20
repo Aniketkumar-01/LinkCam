@@ -27,7 +27,7 @@ Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
 Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
-git commit -m "release: $Tag - DirectShow COM filter build, signed Android release, and transport encryption" 2>$null
+git commit -m "release: $Tag - Fix QR camera crash, thread-safe transport, and enhanced USB manual pairing UX" 2>$null
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow

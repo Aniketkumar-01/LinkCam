@@ -114,6 +114,19 @@ class SocketTransport(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val gson = Gson()
     private var sessionKey: ByteArray? = null
+    private val sendLock = Any()
+
+    private fun writePacketDirect(bytes: ByteArray) {
+        synchronized(sendLock) {
+            try {
+                val out = outputStream ?: return
+                out.write(bytes)
+                out.flush()
+            } catch (e: Exception) {
+                disconnect("Connection severed: ${e.message}")
+            }
+        }
+    }
 
     private fun deriveSessionKey(token: String, sessionId: String): ByteArray {
         val md = MessageDigest.getInstance("SHA-256")
@@ -155,8 +168,7 @@ class SocketTransport(
                     payloadLength = authPayload.size
                 )
                 val authPacket = Packet(authHeader, authPayload)
-                outputStream?.write(authPacket.toByteArray())
-                outputStream?.flush()
+                writePacketDirect(authPacket.toByteArray())
 
                 // Read Auth Response (24 bytes header + payload)
                 val inStream = inputStream ?: throw java.io.IOException("Socket stream closed")
@@ -255,8 +267,7 @@ class SocketTransport(
                     timestamp = System.currentTimeMillis(),
                     payloadLength = 0
                 )
-                outputStream?.write(header.toByteArray())
-                outputStream?.flush()
+                writePacketDirect(header.toByteArray())
             } catch (ignored: Exception) {}
         }
     }
@@ -274,8 +285,7 @@ class SocketTransport(
                     payloadLength = payload.size
                 )
                 val packet = Packet(header, payload)
-                outputStream?.write(packet.toByteArray())
-                outputStream?.flush()
+                writePacketDirect(packet.toByteArray())
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -298,8 +308,7 @@ class SocketTransport(
                     payloadLength = encrypted.size
                 )
                 val packet = Packet(header, encrypted)
-                outputStream?.write(packet.toByteArray())
-                outputStream?.flush()
+                writePacketDirect(packet.toByteArray())
             } catch (e: Exception) {
                 disconnect()
             }
@@ -320,8 +329,7 @@ class SocketTransport(
                     payloadLength = encrypted.size
                 )
                 val encPacket = Packet(newHeader, encrypted)
-                outputStream?.write(encPacket.toByteArray())
-                outputStream?.flush()
+                writePacketDirect(encPacket.toByteArray())
             } catch (ignored: Exception) {
                 // Audio packet loss over lossy Wi-Fi should not sever the session
             }
@@ -352,8 +360,7 @@ class SocketTransport(
                     payloadLength = payload.size
                 )
                 val packet = Packet(header, payload)
-                outputStream?.write(packet.toByteArray())
-                outputStream?.flush()
+                writePacketDirect(packet.toByteArray())
             } catch (ignored: Exception) {}
         }
     }
@@ -382,8 +389,7 @@ class SocketTransport(
                     payloadLength = encrypted.size
                 )
                 val packet = Packet(header, encrypted)
-                outputStream?.write(packet.toByteArray())
-                outputStream?.flush()
+                writePacketDirect(packet.toByteArray())
             } catch (e: Exception) {
                 e.printStackTrace()
             }

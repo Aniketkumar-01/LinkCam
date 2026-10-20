@@ -12,25 +12,55 @@ pub struct AdbDeviceInfo {
 pub struct AdbManager;
 
 impl AdbManager {
-    /// Locate adb binary: checks system PATH first to avoid restarting running ADB servers, then local platform-tools
+    /// Locate adb binary: checks system PATH, ANDROID_HOME, LocalAppData Android Sdk, and bundled paths
     pub fn locate_adb() -> String {
-        // 1. Prefer existing system adb on PATH to avoid killing running ADB server daemons (e.g. Android Studio)
+        // 1. Check system PATH first
         if let Ok(output) = Command::new("adb").arg("version").output() {
             if output.status.success() {
                 return "adb".to_string();
             }
         }
 
-        // 2. Fall back to bundled platform-tools in %LOCALAPPDATA%\LinkCam\platform-tools\adb.exe
+        // 2. Check ANDROID_HOME / ANDROID_SDK_ROOT environment variables
+        for env_var in ["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
+            if let Ok(root) = std::env::var(env_var) {
+                let candidate = std::path::PathBuf::from(root).join("platform-tools").join("adb.exe");
+                if candidate.exists() {
+                    return candidate.to_string_lossy().to_string();
+                }
+            }
+        }
+
+        // 3. Check %LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe (Standard Android Studio installation on Windows)
         if let Ok(app_data) = std::env::var("LOCALAPPDATA") {
-            let candidate = std::path::PathBuf::from(app_data)
+            let sdk_candidate = std::path::PathBuf::from(&app_data)
+                .join("Android")
+                .join("Sdk")
+                .join("platform-tools")
+                .join("adb.exe");
+            if sdk_candidate.exists() {
+                return sdk_candidate.to_string_lossy().to_string();
+            }
+
+            let linkcam_candidate = std::path::PathBuf::from(&app_data)
                 .join("LinkCam")
                 .join("platform-tools")
                 .join("adb.exe");
-            if candidate.exists() {
-                return candidate.to_string_lossy().to_string();
+            if linkcam_candidate.exists() {
+                return linkcam_candidate.to_string_lossy().to_string();
             }
         }
+
+        // 4. Common standalone installations
+        for path in [
+            r"C:\platform-tools\adb.exe",
+            r"C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe",
+        ] {
+            if std::path::Path::new(path).exists() {
+                return path.to_string();
+            }
+        }
+
         "adb".to_string()
     }
 
@@ -84,7 +114,9 @@ impl AdbManager {
         let adb = Self::locate_adb();
         let mut cmd = Command::new(&adb);
         if let Some(s) = serial {
-            cmd.args(["-s", s]);
+            if !s.is_empty() {
+                cmd.args(["-s", s]);
+            }
         }
         let forward_arg = format!("tcp:{}", port);
         cmd.args(["reverse", &forward_arg, &forward_arg]);
@@ -109,8 +141,10 @@ impl AdbManager {
     ) -> Result<(), String> {
         let adb = Self::locate_adb();
         let mut cmd = Command::new(&adb);
+        if !serial.is_empty() {
+            cmd.args(["-s", serial]);
+        }
         cmd.args([
-            "-s", serial,
             "shell", "am", "start",
             "-n", "com.linkcam.app/.ui.MainActivity",
             "--es", "usb_token", token,

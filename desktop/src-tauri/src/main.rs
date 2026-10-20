@@ -129,6 +129,27 @@ async fn pair_adb_device(server: tauri::State<'_, Arc<NetworkServer>>, serial: S
     Ok(format!("Pairing token successfully pushed to USB device {}", serial))
 }
 
+#[tauri::command]
+async fn manual_usb_pair(server: tauri::State<'_, Arc<NetworkServer>>) -> Result<String, String> {
+    let mgr = server.get_pairing_manager();
+    let mut pm = mgr.write().await;
+
+    // Trust default connection
+    pm.trust_adb_device("default");
+
+    // Configure ADB reverse for tcp:8443
+    AdbManager::setup_reverse(None, 8443)?;
+
+    // Generate token
+    let (token, session_id) = pm.generate_usb_token("default");
+    let cert_fp = pm.cert_fingerprint().to_string();
+
+    // Push token to default attached device
+    AdbManager::push_pairing_token("", &token, &session_id, &cert_fp, 8443)?;
+
+    Ok("Port 8443 reversed & USB pairing token sent to connected phone!".to_string())
+}
+
 fn main() {
     let (capture_chunk_tx, mut capture_chunk_rx) = mpsc::channel(64);
     let (delivered_tx, mut delivered_rx) = mpsc::channel(16);
@@ -156,7 +177,8 @@ fn main() {
             set_save_destination,
             get_adb_devices,
             trust_adb_device,
-            pair_adb_device
+            pair_adb_device,
+            manual_usb_pair
         ])
         .setup(move |_app| {
             println!("[LinkCam] Starting LinkCam Windows Desktop Companion Engine...");
