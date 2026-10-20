@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, Download, CheckCircle, AlertTriangle, X, RefreshCw, Cpu, Wifi, Shield } from 'lucide-react';
+import { Activity, Download, CheckCircle, X, RefreshCw, Cpu, Wifi, Shield } from 'lucide-react';
 
 interface DiagnosticsModalProps {
   isOpen: boolean;
