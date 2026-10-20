@@ -38,46 +38,43 @@ jobs:
         run: chmod +x android/gradlew
 
       - name: Build Android Release APK
+        env:
+          KEY_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
+          set -e
           cd android
-          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.jks
-          else
-            keytool -genkeypair -v -keystore release.jks -alias linkcam -keyalg RSA -keysize 2048 -validity 10000 -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'linkcam_release' }}" -keypass "${{ secrets.ANDROID_KEY_PASSWORD || 'linkcam_release' }}" -dname "CN=LinkCam, OU=Engineering, O=LinkCam, C=US"
-          fi
-          gradle assembleRelease --stacktrace --no-daemon 2>&1 | tee ../build.log
+          PASS="${KEY_PASS:-linkcam_release}"
+          ALIAS="${KEY_ALIAS:-linkcam}"
+          export ANDROID_KEYSTORE_PASSWORD="$PASS"
+          export ANDROID_KEY_PASSWORD="$PASS"
+          export ANDROID_KEY_ALIAS="$ALIAS"
 
-      - name: Dump Failure Logs on Error
-        if: failure()
-        run: |
-          echo "::error::Gradle build failed. Last 60 lines of output:"
-          tail -n 60 build.log
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > release.jks
+          else
+            keytool -genkeypair -v -keystore release.jks -alias "$ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -storepass "$PASS" -keypass "$PASS" -dname "CN=LinkCam, OU=Engineering, O=LinkCam, C=US"
+          fi
+
+          ./gradlew assembleRelease --stacktrace --no-daemon
 
       - name: Rename APK for Release
         run: |
           mkdir -p artifacts
-          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
-            echo "Found signed release APK: android/app/build/outputs/apk/release/app-release.apk"
-            cp android/app/build/outputs/apk/release/app-release.apk artifacts/LinkCam-Android.apk
-          elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
-            echo "Found unsigned release APK: android/app/build/outputs/apk/release/app-release-unsigned.apk"
-            cp android/app/build/outputs/apk/release/app-release-unsigned.apk artifacts/LinkCam-Android.apk
-          elif [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            echo "Found debug fallback APK: android/app/build/outputs/apk/debug/app-debug.apk"
-            cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/LinkCam-Android.apk
-          else
-            echo "Searching for any generated APK in android/app/build..."
-            APK_FILE=$(find android/app/build -type f -name "*.apk" | head -n 1)
-            if [ -n "$APK_FILE" ]; then
-              echo "Found APK: $APK_FILE"
-              cp "$APK_FILE" artifacts/LinkCam-Android.apk
-            else
-              echo "::error::No APK file found in android/app/build. Directory contents:"
-              find android -maxdepth 5 || true
-              exit 1
-            fi
+          APK_FILE=$(find android/app/build/outputs/apk -type f -name "*.apk" 2>/dev/null | grep -v "unsigned" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find android/app/build/outputs/apk -type f -name "*.apk" 2>/dev/null | head -n 1)
           fi
-          ls -lh artifacts/LinkCam-Android.apk
+          if [ -n "$APK_FILE" ]; then
+            echo "Found APK: $APK_FILE"
+            cp "$APK_FILE" artifacts/LinkCam-Android.apk
+            ls -lh artifacts/LinkCam-Android.apk
+          else
+            echo "::error::No APK found in android/app/build/outputs/apk"
+            find android -maxdepth 5 || true
+            exit 1
+          fi
 
       - name: Upload Android APK Asset
         uses: actions/upload-artifact@v4
