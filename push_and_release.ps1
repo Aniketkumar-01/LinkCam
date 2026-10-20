@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.0.14",
-    [string]$Message = "Release v1.0.14: Phase 1 P0 Security & Protocol Core (Mutual SAS Verification PIN, 120s Token Expiration, Per-IP Rate Limiting, New Protocol Packet Types)"
+    [string]$Tag = "v1.0.15",
+    [string]$Message = "Release v1.0.15: Fix TS6133 unused imports in desktop UI and bundle desktop icons"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -27,7 +27,7 @@ Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
 Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
-git commit -m "feat(core): implement all 4 architecture phases - security, hardware H.264, vcam, and diagnostics ($Tag)"
+git commit -m "fix(build): clean unused imports in desktop UI and release ($Tag)"
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow

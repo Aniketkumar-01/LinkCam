@@ -5,6 +5,14 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.15] - 2026-10-20
+
+### Fixed
+- **TypeScript Strict Build Fix (TS6133)**: Removed unused `AlertTriangle` icon import in `desktop/src/components/DiagnosticsModal.tsx`, resolving CI and local Vite/TypeScript production compilation failure.
+
+### Added
+- **Embedded Desktop Bundle Icons**: Added generated multi-resolution icon assets (`32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.ico`, `icon.icns`) in `desktop/src-tauri/icons/` for native Windows executable and Inno Setup installer packaging.
+
 ## [1.0.14] - 2026-10-20
 
 ### Added
