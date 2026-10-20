@@ -18,24 +18,24 @@ pub fn construct_nonce(sequence: u32, timestamp: u64) -> [u8; 12] {
     nonce
 }
 
-/// ChaCha20 (RFC 8439) stream cipher quarter round
+/// ChaCha20 (RFC 8439) stream cipher quarter round operating on the 16-word state
 #[inline(always)]
-fn quarter_round(a: &mut u32, b: &mut u32, c: &mut u32, d: &mut u32) {
-    *a = a.wrapping_add(*b);
-    *d ^= *a;
-    *d = d.rotate_left(16);
+fn quarter_round(x: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize) {
+    x[a] = x[a].wrapping_add(x[b]);
+    x[d] ^= x[a];
+    x[d] = x[d].rotate_left(16);
 
-    *c = c.wrapping_add(*d);
-    *b ^= *c;
-    *b = b.rotate_left(12);
+    x[c] = x[c].wrapping_add(x[d]);
+    x[b] ^= x[c];
+    x[b] = x[b].rotate_left(12);
 
-    *a = a.wrapping_add(*b);
-    *d ^= *a;
-    *d = d.rotate_left(8);
+    x[a] = x[a].wrapping_add(x[b]);
+    x[d] ^= x[a];
+    x[d] = x[d].rotate_left(8);
 
-    *c = c.wrapping_add(*d);
-    *b ^= *c;
-    *b = b.rotate_left(7);
+    x[c] = x[c].wrapping_add(x[d]);
+    x[b] ^= x[c];
+    x[b] = x[b].rotate_left(7);
 }
 
 /// ChaCha20 block function generating 64 bytes of keystream
@@ -76,16 +76,16 @@ fn chacha20_block(key: &[u8; 32], nonce: &[u8; 12], counter: u32) -> [u8; 64] {
     // 20 rounds (10 column rounds + 10 diagonal rounds)
     for _ in 0..10 {
         // Column round
-        quarter_round(&mut working_state[0], &mut working_state[4], &mut working_state[8], &mut working_state[12]);
-        quarter_round(&mut working_state[1], &mut working_state[5], &mut working_state[9], &mut working_state[13]);
-        quarter_round(&mut working_state[2], &mut working_state[6], &mut working_state[10], &mut working_state[14]);
-        quarter_round(&mut working_state[3], &mut working_state[7], &mut working_state[11], &mut working_state[15]);
+        quarter_round(&mut working_state, 0, 4, 8, 12);
+        quarter_round(&mut working_state, 1, 5, 9, 13);
+        quarter_round(&mut working_state, 2, 6, 10, 14);
+        quarter_round(&mut working_state, 3, 7, 11, 15);
 
         // Diagonal round
-        quarter_round(&mut working_state[0], &mut working_state[5], &mut working_state[10], &mut working_state[15]);
-        quarter_round(&mut working_state[1], &mut working_state[6], &mut working_state[11], &mut working_state[12]);
-        quarter_round(&mut working_state[2], &mut working_state[7], &mut working_state[8], &mut working_state[13]);
-        quarter_round(&mut working_state[3], &mut working_state[4], &mut working_state[9], &mut working_state[14]);
+        quarter_round(&mut working_state, 0, 5, 10, 15);
+        quarter_round(&mut working_state, 1, 6, 11, 12);
+        quarter_round(&mut working_state, 2, 7, 8, 13);
+        quarter_round(&mut working_state, 3, 4, 9, 14);
     }
 
     let mut output = [0u8; 64];
