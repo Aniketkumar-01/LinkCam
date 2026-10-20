@@ -38,3 +38,7 @@ Thumbs.db
 # Impeccable Local Config
 .impeccable/config.local.json
 .impeccable/review/
+
+check_ci.*
+*.cjs.tmp
+desktop/fetch-ci.cjs
