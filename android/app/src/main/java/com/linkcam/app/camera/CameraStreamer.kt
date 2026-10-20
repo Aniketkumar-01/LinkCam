@@ -28,7 +28,9 @@ class CameraStreamer(
 ) {
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
+    private var preview: Preview? = null
     private var imageAnalysis: ImageAnalysis? = null
+    private var surfaceProvider: Preview.SurfaceProvider? = null
     private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var h264Encoder: MediaCodecH264Encoder? = null
 
@@ -36,6 +38,13 @@ class CameraStreamer(
     private var isTorchEnabled: Boolean = false
     private var targetResolution = Size(1920, 1080)
     private var frameSequence: Long = 0
+
+    fun setSurfaceProvider(provider: Preview.SurfaceProvider?) {
+        this.surfaceProvider = provider
+        if (cameraProvider != null) {
+            bindCameraUseCases()
+        }
+    }
 
     fun start() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
@@ -76,11 +85,25 @@ class CameraStreamer(
                 }
             }
 
+        val useCases = mutableListOf<UseCase>()
+
+        val sp = surfaceProvider
+        if (sp != null) {
+            val prev = Preview.Builder()
+                .setTargetResolution(targetResolution)
+                .build()
+            prev.setSurfaceProvider(sp)
+            preview = prev
+            useCases.add(prev)
+        }
+
+        imageAnalysis?.let { useCases.add(it) }
+
         try {
             camera = provider.bindToLifecycle(
                 lifecycleOwner,
                 cameraSelector,
-                imageAnalysis
+                *useCases.toTypedArray()
             )
         } catch (e: Exception) {
             e.printStackTrace()

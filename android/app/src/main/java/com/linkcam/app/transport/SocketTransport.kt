@@ -192,6 +192,36 @@ class SocketTransport(
         }
     }
 
+    fun sendTelemetry(
+        fps: Float,
+        batteryPct: Int,
+        isCharging: Boolean,
+        latencyMs: Int,
+        connectionMode: String = "WiFi"
+    ) {
+        if (!isRunning) return
+        scope.launch {
+            try {
+                val mode = when {
+                    connectionMode.contains("USB", ignoreCase = true) -> "Usb"
+                    connectionMode.contains("Hotspot", ignoreCase = true) -> "DirectHotspot"
+                    else -> "WiFi"
+                }
+                val telemetryJson = """{"fps":$fps,"bitrate_kbps":4800,"latency_ms":$latencyMs,"battery_pct":$batteryPct,"is_charging":$isCharging,"thermal_state":"Normal","connection_mode":"$mode"}"""
+                val payload = telemetryJson.toByteArray(Charsets.UTF_8)
+                val header = PacketHeader(
+                    packetType = PacketHeader.TYPE_TELEMETRY_HEARTBEAT,
+                    sequence = sequenceCounter.getAndIncrement(),
+                    timestamp = System.currentTimeMillis(),
+                    payloadLength = payload.size
+                )
+                val packet = Packet(header, payload)
+                outputStream?.write(packet.toByteArray())
+                outputStream?.flush()
+            } catch (ignored: Exception) {}
+        }
+    }
+
     fun sendInstantCapture(metaJson: String, fileBytes: ByteArray) {
         if (!isRunning) return
         scope.launch {

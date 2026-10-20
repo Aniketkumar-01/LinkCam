@@ -1,6 +1,6 @@
 ; Inno Setup Script for LinkCam Windows Companion
 #define MyAppName "LinkCam"
-#define MyAppVersion "1.0.16"
+#define MyAppVersion "1.0.17"
 #define MyAppPublisher "LinkCam Team"
 #define MyAppURL "https://github.com/Aniketkumar-01/LinkCam"
 #define MyAppExeName "linkcam-desktop.exe"

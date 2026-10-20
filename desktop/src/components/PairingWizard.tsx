@@ -6,18 +6,19 @@ interface PairingWizardProps {
   serverPort: number;
   availableIps: string[];
   sessionToken: string;
+  sessionId?: string;
   verificationPin?: string;
   onRefreshPairing: () => void;
-  onSimulateConnect: () => void;
+  onSimulateConnect?: () => void;
 }
 
 export const PairingWizard: React.FC<PairingWizardProps> = ({
   serverPort,
   availableIps,
   sessionToken,
+  sessionId,
   verificationPin = '582 391',
   onRefreshPairing,
-  onSimulateConnect,
 }) => {
   const [activeMode, setActiveMode] = useState<'hotspot' | 'wifi' | 'usb'>('hotspot');
   const [copied, setCopied] = useState(false);
@@ -26,6 +27,7 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
     port: serverPort,
     ips: availableIps,
     token: sessionToken,
+    session_id: sessionId || 'default_session',
     pin: verificationPin,
     proto: 1,
     exp: 120,
@@ -205,18 +207,31 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
             </li>
             <li className="flex gap-3">
               <span className="font-mono text-amber-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">3</span>
-              <span>LinkCam will automatically detect the device and establish the video pipe.</span>
+              <span>
+                Run port forward command in PowerShell or Command Prompt:
+                <div className="mt-2 flex items-center gap-2">
+                  <code className="bg-black/50 border border-white/[0.1] px-3 py-1.5 rounded-lg text-[11px] font-mono text-amber-300">
+                    adb reverse tcp:8443 tcp:8443
+                  </code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText('adb reverse tcp:8443 tcp:8443 && adb reverse tcp:8444 tcp:8444');
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }}
+                    className="fluent-btn-subtle px-2.5 py-1.5 text-xs text-slate-300 flex items-center gap-1"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Copy ADB Command</span>
+                  </button>
+                </div>
+              </span>
+            </li>
+            <li className="flex gap-3">
+              <span className="font-mono text-amber-400 bg-white/[0.06] w-5 h-5 rounded-full flex items-center justify-center shrink-0">4</span>
+              <span>Open the LinkCam Android app, tap <strong>Manual / USB</strong>, and tap <strong>Connect via USB (127.0.0.1)</strong>.</span>
             </li>
           </ol>
-
-          <div className="pt-2">
-            <button
-              onClick={onSimulateConnect}
-              className="fluent-btn-primary py-2.5 px-6 text-xs font-semibold flex items-center gap-2"
-            >
-              <span>Connect via USB</span>
-            </button>
-          </div>
         </div>
       )}
 

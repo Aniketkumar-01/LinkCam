@@ -1,5 +1,7 @@
 package com.linkcam.app.ui
 
+import android.view.ViewGroup
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -16,6 +18,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.linkcam.app.camera.CameraLens
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,36 +37,28 @@ fun StreamScreen(
     onTriggerDocumentScan: () -> Unit,
     onTriggerPhoto: () -> Unit,
     onEnterMeetingMode: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onPreviewViewReady: (PreviewView) -> Unit = {}
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0A0E17))
     ) {
-        // Simulated Camera Viewfinder Background
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF0F172A)),
-            contentAlignment = Alignment.Center
-        ) {
-            // Viewfinder center reticle
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(alpha = 0.04f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF38BDF8))
-                )
-            }
-        }
+        // Real CameraX Live Viewfinder
+        AndroidView(
+            factory = { context ->
+                PreviewView(context).apply {
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    onPreviewViewReady(this)
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
 
         // Top Status Bar Overlay (Window Insets Respecting)
         Column(

@@ -1,11 +1,46 @@
 import React, { useState } from 'react';
-import { Camera, Check, Folder, ShieldCheck } from 'lucide-react';
+import { Camera, Check, Clipboard, Folder, ShieldCheck } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
-  const [savePath, setSavePath] = useState('C:\\Users\\User\\Pictures\\LinkCam');
+  const [savePath, setSavePath] = useState(() => {
+    return localStorage.getItem('linkcam_save_destination') || 'C:\\Users\\User\\Pictures\\LinkCam';
+  });
   const [vcamEnabled, setVcamEnabled] = useState(true);
   const [hardwareAccel, setHardwareAccel] = useState(true);
   const [autoClipboard, setAutoClipboard] = useState(true);
+  const [savedNotice, setSavedNotice] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const updateSavePath = (path: string) => {
+    setSavePath(path);
+    localStorage.setItem('linkcam_save_destination', path);
+    setSavedNotice(true);
+    setTimeout(() => setSavedNotice(false), 2000);
+  };
+
+  const handlePasteClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim().length > 0) {
+        updateSavePath(text.trim());
+      }
+    } catch {
+      // Fallback
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      // On webkitRelativePath, directory name can be extracted
+      const relPath = file.webkitRelativePath;
+      if (relPath) {
+        const dirName = relPath.split('/')[0];
+        updateSavePath(`C:\\Users\\User\\Pictures\\${dirName}`);
+      }
+    }
+  };
 
   return (
     <div className="flex-1 h-full p-8 overflow-y-auto max-w-4xl mx-auto space-y-8">
@@ -89,18 +124,61 @@ export const SettingsView: React.FC = () => {
 
             {/* Folder Destination */}
             <div className="pt-3 border-t border-white/[0.06] space-y-1.5">
-              <div className="font-medium text-slate-200">Save Destination</div>
+              <div className="flex items-center justify-between">
+                <div className="font-medium text-slate-200">Save Destination</div>
+                {savedNotice && (
+                  <span className="text-[11px] text-emerald-400 font-medium animate-pulse">
+                    Saved to preferences
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={savePath}
-                  onChange={(e) => setSavePath(e.target.value)}
+                  onChange={(e) => updateSavePath(e.target.value)}
+                  onPaste={(e) => {
+                    const text = e.clipboardData.getData('text');
+                    if (text) {
+                      e.preventDefault();
+                      updateSavePath(text.trim());
+                    }
+                  }}
+                  placeholder="Paste or browse full folder path..."
                   className="flex-1 bg-black/40 border border-white/[0.08] rounded-lg px-3 py-2 text-xs font-mono text-slate-300 focus:outline-none focus:border-blue-500"
                 />
-                <button className="fluent-btn-subtle px-3 py-2 text-xs flex items-center gap-1.5">
+
+                {/* Paste from Clipboard Button */}
+                <button
+                  type="button"
+                  onClick={handlePasteClipboard}
+                  title="Paste from clipboard"
+                  className="fluent-btn-subtle px-2.5 py-2 text-xs flex items-center gap-1 text-slate-300 hover:text-white"
+                >
+                  <Clipboard className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Paste</span>
+                </button>
+
+                {/* Browse Button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="fluent-btn-subtle px-3 py-2 text-xs flex items-center gap-1.5"
+                >
                   <Folder className="w-3.5 h-3.5 text-slate-400" />
                   <span>Browse</span>
                 </button>
+
+                {/* Hidden folder input */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  // @ts-ignore
+                  webkitdirectory=""
+                  directory=""
+                  onChange={handleFileChange}
+                  style={{ display: 'none' }}
+                />
               </div>
             </div>
           </div>

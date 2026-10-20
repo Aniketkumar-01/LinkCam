@@ -1,9 +1,9 @@
 # LinkCam — Comprehensive Technical Architecture & System Specification
 
-**Version:** 1.2.0 (v1.0.16 Production Baseline)  
-**Status:** Validated Production Architecture — v1.0.16 Released  
+**Version:** 1.2.0 (v1.0.17 Production Baseline)  
+**Status:** Validated Production Architecture — v1.0.17 Released  
 **Author:** LinkCam Engineering Team  
-**Last Updated:** October 2026 (v1.0.16 Release)  
+**Last Updated:** October 2026 (v1.0.17 Release)  
 **Repository:** `Aniketkumar-01/LinkCam`  
 
 ---

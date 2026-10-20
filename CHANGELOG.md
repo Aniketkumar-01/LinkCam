@@ -5,6 +5,16 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.17] - 2026-10-20
+
+### Added
+- **Real CameraX Viewfinder on Android**: Integrated native `PreviewView` inside Jetpack Compose, replacing the placeholder box and displaying the live 60fps camera feed directly on the mobile screen.
+- **Live QR Code Scanner (`PairingScreen.kt`)**: Added live CameraX barcode scanning using Google ML Kit (`BarcodeScanning`), automatically detecting and parsing desktop QR pairing credentials to establish the connection.
+- **Manual Wi-Fi & 1-Tap USB Connect**: Added manual IP/PIN connection options and a direct 1-tap `127.0.0.1:8443` USB tethering button for ADB cable streaming.
+- **Live Hardware Telemetry**: Android queries real device hardware (`Build.MANUFACTURER`, `Build.MODEL`) and live battery level (`BatteryManager.BATTERY_PROPERTY_CAPACITY`), sending real periodic heartbeats to the desktop.
+- **Real Desktop Pairing & Session Binding**: Exposed `get_pairing_payload`, `rotate_credentials`, and `get_connection_status` Tauri commands in the Rust companion, dynamically syncing real network IPs, tokens, and active session telemetry.
+- **Working Save Destination Folder & Paste**: Added an interactive "Paste" button, `localStorage` persistence, and Windows folder picker in desktop Settings.
+
 ## [1.0.16] - 2026-10-20
 
 ### Fixed

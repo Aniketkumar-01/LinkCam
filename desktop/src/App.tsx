@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActiveTab, Sidebar } from './components/Sidebar';
 import { LiveStudio } from './components/LiveStudio';
 import { PairingWizard } from './components/PairingWizard';
@@ -7,44 +7,133 @@ import { SettingsView } from './components/SettingsView';
 import { DeliveredCapture, QuickCaptureTray } from './components/QuickCaptureTray';
 import { PairingVerificationModal, PendingPairingRequest } from './components/PairingVerificationModal';
 import { DiagnosticsModal } from './components/DiagnosticsModal';
+import { invokeTauri } from './tauriApi';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('studio');
-  const [isConnected, setIsConnected] = useState(true);
-  const [sessionToken, setSessionToken] = useState('lnk_tok_7f9a2b1c4e6d8035');
-  const [verificationPin, setVerificationPin] = useState('582 391');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('pairing');
+  const [isConnected, setIsConnected] = useState(false);
+  const [deviceName, setDeviceName] = useState('No Device Connected');
+  const [batteryPct, setBatteryPct] = useState(0);
+  const [isCharging, setIsCharging] = useState(false);
+  const [fps, setFps] = useState(0);
+  const [bitrateKbps, setBitrateKbps] = useState(0);
+  const [latencyMs, setLatencyMs] = useState(0);
+  const [connectionMode, setConnectionMode] = useState<'Usb' | 'DirectHotspot' | 'WiFi'>('WiFi');
+
+  // Real Pairing State from Rust Backend
+  const [serverPort, setServerPort] = useState(8443);
+  const [availableIps, setAvailableIps] = useState<string[]>(['127.0.0.1']);
+  const [sessionToken, setSessionToken] = useState('lnk_tok_initializing');
+  const [sessionId, setSessionId] = useState('sess_init');
+  const [verificationPin, setVerificationPin] = useState('--- ---');
+
   const [latestCapture, setLatestCapture] = useState<DeliveredCapture | null>(null);
   const [pendingPairing, setPendingPairing] = useState<PendingPairingRequest | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
-  const [captures, setCaptures] = useState<DeliveredCapture[]>([
-    {
-      id: 'cap_1',
-      fileName: 'Signed_Contract_Page1.pdf',
-      mimeType: 'application/pdf',
-      filePath: 'C:\\Users\\User\\Pictures\\LinkCam\\20261019_171500_Signed_Contract_Page1.pdf',
-      fileSize: 245000,
-      timestamp: 'Today at 5:15 PM',
-      isDocument: true,
-    },
-    {
-      id: 'cap_2',
-      fileName: 'Whiteboard_Brainstorm.jpg',
-      mimeType: 'image/jpeg',
-      filePath: 'C:\\Users\\User\\Pictures\\LinkCam\\20261019_170530_Whiteboard_Brainstorm.jpg',
-      fileSize: 1820000,
-      timestamp: 'Today at 5:05 PM',
-      isDocument: false,
-    },
-  ]);
+  const [captures, setCaptures] = useState<DeliveredCapture[]>([]);
 
-  // Triggering Instant Capture (simulated from desktop or mobile trigger)
+  // Fetch real pairing credentials from Rust backend
+  const fetchPairingInfo = async () => {
+    try {
+      const payload = await invokeTauri<{
+        port: number;
+        ips: string[];
+        auth_token: string;
+        verification_pin: string;
+        session_id: string;
+      }>('get_pairing_payload');
+
+      if (payload) {
+        setServerPort(payload.port);
+        setAvailableIps(payload.ips);
+        setSessionToken(payload.auth_token);
+        setVerificationPin(payload.verification_pin);
+        setSessionId(payload.session_id);
+      }
+    } catch {
+      // Graceful fallback for web preview
+    }
+  };
+
+  useEffect(() => {
+    fetchPairingInfo();
+
+    // Poll real connection and telemetry status from backend every 1.5 seconds
+    const statusTimer = setInterval(async () => {
+      try {
+        const status = await invokeTauri<{
+          is_connected: boolean;
+          device_name: string;
+          battery_pct: number;
+          is_charging: boolean;
+          fps: number;
+          bitrate_kbps: number;
+          latency_ms: number;
+          connection_mode: string;
+        }>('get_connection_status');
+
+        if (status.is_connected) {
+          setIsConnected(true);
+          setDeviceName(status.device_name || 'Android Device');
+          setBatteryPct(status.battery_pct);
+          setIsCharging(status.is_charging);
+          setFps(status.fps);
+          setBitrateKbps(status.bitrate_kbps);
+          setLatencyMs(status.latency_ms);
+
+          const mode = status.connection_mode.toLowerCase();
+          if (mode.includes('usb')) {
+            setConnectionMode('Usb');
+          } else if (mode.includes('hotspot')) {
+            setConnectionMode('DirectHotspot');
+          } else {
+            setConnectionMode('WiFi');
+          }
+        } else {
+          setIsConnected(false);
+          setDeviceName('No Device Connected');
+        }
+      } catch {
+        // Outside Tauri
+      }
+    }, 1500);
+
+    return () => clearInterval(statusTimer);
+  }, []);
+
+  const handleRefreshPairing = async () => {
+    try {
+      const payload = await invokeTauri<{
+        port: number;
+        ips: string[];
+        auth_token: string;
+        verification_pin: string;
+        session_id: string;
+      }>('rotate_credentials');
+
+      if (payload) {
+        setServerPort(payload.port);
+        setAvailableIps(payload.ips);
+        setSessionToken(payload.auth_token);
+        setVerificationPin(payload.verification_pin);
+        setSessionId(payload.session_id);
+      }
+    } catch {
+      const randomHex = Math.random().toString(16).substring(2, 10);
+      setSessionToken(`lnk_tok_${randomHex}`);
+      const randPin = Math.floor(100000 + Math.random() * 900000).toString();
+      setVerificationPin(`${randPin.slice(0, 3)} ${randPin.slice(3)}`);
+    }
+  };
+
   const handleTriggerPhoto = () => {
+    const saveDir = localStorage.getItem('linkcam_save_destination') || 'C:\\Users\\User\\Pictures\\LinkCam';
     const newCap: DeliveredCapture = {
       id: `cap_${Date.now()}`,
       fileName: `Snap_${Date.now().toString().slice(-4)}.jpg`,
       mimeType: 'image/jpeg',
-      filePath: `C:\\Users\\User\\Pictures\\LinkCam\\Snap_${Date.now().toString().slice(-4)}.jpg`,
+      filePath: `${saveDir}\\Snap_${Date.now().toString().slice(-4)}.jpg`,
       fileSize: 1420000,
       timestamp: 'Just now',
       isDocument: false,
@@ -54,11 +143,12 @@ export const App: React.FC = () => {
   };
 
   const handleTriggerDocumentScan = () => {
+    const saveDir = localStorage.getItem('linkcam_save_destination') || 'C:\\Users\\User\\Pictures\\LinkCam';
     const newCap: DeliveredCapture = {
       id: `cap_${Date.now()}`,
       fileName: `Document_Scan_${Date.now().toString().slice(-4)}.pdf`,
       mimeType: 'application/pdf',
-      filePath: `C:\\Users\\User\\Pictures\\LinkCam\\Document_Scan_${Date.now().toString().slice(-4)}.pdf`,
+      filePath: `${saveDir}\\Document_Scan_${Date.now().toString().slice(-4)}.pdf`,
       fileSize: 312000,
       timestamp: 'Just now',
       isDocument: true,
@@ -67,30 +157,12 @@ export const App: React.FC = () => {
     setLatestCapture(newCap);
   };
 
-  const handleRefreshPairing = () => {
-    const randomHex = Math.random().toString(16).substring(2, 10);
-    setSessionToken(`lnk_tok_${randomHex}`);
-    const randPin = Math.floor(100000 + Math.random() * 900000).toString();
-    setVerificationPin(`${randPin.slice(0, 3)} ${randPin.slice(3)}`);
-  };
-
   const handleCopyPath = (path: string) => {
     navigator.clipboard.writeText(path);
   };
 
   const handleOpenFolder = (path: string) => {
     console.log('Opening folder for:', path);
-  };
-
-  const handleTriggerPairingPrompt = () => {
-    setPendingPairing({
-      id: `req_${Date.now()}`,
-      deviceName: 'Pixel 8 Pro (ARM64)',
-      ipAddress: '192.168.43.1',
-      connectionMode: 'DirectHotspot',
-      verificationPin: verificationPin,
-      requestedAt: 'Just now',
-    });
   };
 
   const handleAcceptPairing = (req: PendingPairingRequest, trust: boolean) => {
@@ -113,9 +185,9 @@ export const App: React.FC = () => {
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         isConnected={isConnected}
-        deviceName="Pixel 8 Pro (ARM64)"
-        batteryPct={86}
-        connectionMode="DirectHotspot"
+        deviceName={deviceName}
+        batteryPct={batteryPct}
+        connectionMode={connectionMode}
       />
 
       {/* Main Surface Content */}
@@ -123,12 +195,12 @@ export const App: React.FC = () => {
         {activeTab === 'studio' && (
           <LiveStudio
             isConnected={isConnected}
-            fps={60.0}
-            bitrateKbps={4850}
-            latencyMs={38}
-            batteryPct={86}
-            isCharging={true}
-            connectionMode="DirectHotspot"
+            fps={fps}
+            bitrateKbps={bitrateKbps}
+            latencyMs={latencyMs}
+            batteryPct={batteryPct}
+            isCharging={isCharging}
+            connectionMode={connectionMode}
             isVcamActive={true}
             onTriggerPhoto={handleTriggerPhoto}
             onTriggerDocumentScan={handleTriggerDocumentScan}
@@ -139,19 +211,20 @@ export const App: React.FC = () => {
         {activeTab === 'captures' && (
           <CapturesGallery
             captures={captures}
+            onTriggerPhoto={handleTriggerPhoto}
+            onTriggerDocumentScan={handleTriggerDocumentScan}
             onOpenFolder={handleOpenFolder}
-            onCopyPath={handleCopyPath}
           />
         )}
 
         {activeTab === 'pairing' && (
           <PairingWizard
-            serverPort={8443}
-            availableIps={['192.168.43.1', '192.168.1.120', '127.0.0.1']}
+            serverPort={serverPort}
+            availableIps={availableIps}
             sessionToken={sessionToken}
+            sessionId={sessionId}
             verificationPin={verificationPin}
             onRefreshPairing={handleRefreshPairing}
-            onSimulateConnect={handleTriggerPairingPrompt}
           />
         )}
 
@@ -173,17 +246,15 @@ export const App: React.FC = () => {
         onDecline={handleDeclinePairing}
       />
 
-      {/* Live System Diagnostics & Latency Suite Modal */}
+      {/* Diagnostics Modal */}
       <DiagnosticsModal
         isOpen={showDiagnostics}
         onClose={() => setShowDiagnostics(false)}
-        latencyMs={28}
-        fps={60.0}
-        bitrateKbps={8200}
-        batteryPct={88}
+        latencyMs={latencyMs}
+        fps={fps}
+        bitrateKbps={bitrateKbps}
+        batteryPct={batteryPct}
       />
     </div>
   );
 };
-
-export default App;
