@@ -125,13 +125,18 @@ impl PairingManager {
             return Err("ERR_PAIRING_RATE_LIMITED: IP blocked due to repeated failed pairing attempts");
         }
 
+        // Loopback / USB tethering (ADB reverse): local host is trusted
+        if ip.is_loopback() && (token == "lnk_usb" || token == self.current_token) {
+            self.record_attempt(ip, true);
+            return Ok(true);
+        }
+
         if self.is_token_expired() {
             return Err("ERR_QR_TOKEN_EXPIRED: Pairing token has expired. Please refresh the QR code.");
         }
 
-        let is_valid = !self.current_token.is_empty()
-            && self.current_token == token
-            && self.session_id == session;
+        let is_valid = (!self.current_token.is_empty() && self.current_token == token && self.session_id == session)
+            || (!self.verification_pin.is_empty() && (token == self.verification_pin || token == self.verification_pin.replace(' ', "")));
 
         self.record_attempt(ip, is_valid);
 
@@ -146,8 +151,23 @@ impl PairingManager {
     pub fn get_available_ips(&self) -> Vec<String> {
         let mut ips = Vec::new();
 
-        if let Ok(ip) = local_ip_address::local_ip() {
-            ips.push(ip.to_string());
+        if let Ok(ifaces) = local_ip_address::list_afinet_netifas() {
+            for (_name, ip) in ifaces {
+                if let IpAddr::V4(v4) = ip {
+                    if !v4.is_loopback() && !v4.is_link_local() {
+                        let ip_str = v4.to_string();
+                        if !ips.contains(&ip_str) {
+                            ips.push(ip_str);
+                        }
+                    }
+                }
+            }
+        }
+
+        if ips.is_empty() {
+            if let Ok(ip) = local_ip_address::local_ip() {
+                ips.push(ip.to_string());
+            }
         }
 
         if !ips.contains(&"127.0.0.1".to_string()) {

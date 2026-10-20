@@ -31,10 +31,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import android.util.Size
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.common.HybridBinarizer
 import java.util.concurrent.Executors
 
 @Composable
@@ -414,10 +423,19 @@ private fun parseAndConnect(
         val gson = Gson()
         val json = gson.fromJson(qrContent, JsonObject::class.java)
 
-        val port = if (json.has("port")) json.get("port").asInt else 8443
-        val token = if (json.has("token")) json.get("token").asString else ""
+        val port = if (json.has("port")) json.get("port").asInt
+            else if (json.has("p")) json.get("p").asInt
+            else 8443
+
+        val token = if (json.has("token")) json.get("token").asString
+            else if (json.has("t")) json.get("t").asString
+            else ""
+
         val pin = if (json.has("pin")) json.get("pin").asString else ""
-        val session = if (json.has("session_id")) json.get("session_id").asString else "qr_session"
+
+        val session = if (json.has("session_id")) json.get("session_id").asString
+            else if (json.has("s")) json.get("s").asString
+            else "qr_session"
 
         val ips = if (json.has("ips")) {
             json.getAsJsonArray("ips").map { it.asString }
@@ -459,7 +477,9 @@ fun QrCameraScanner(
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
 
+                // Use 1280x720 for crisp QR code resolution
                 val imageAnalysis = ImageAnalysis.Builder()
+                    .setTargetResolution(Size(1280, 720))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
                     .also { analysis ->
@@ -468,12 +488,35 @@ fun QrCameraScanner(
 
                 try {
                     cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(
+                    val camera = cameraProvider.bindToLifecycle(
                         lifecycleOwner,
                         CameraSelector.DEFAULT_BACK_CAMERA,
                         preview,
                         imageAnalysis
                     )
+
+                    // Continuous auto-focus on center
+                    try {
+                        val factory = androidx.camera.core.SurfaceOrientedMeteringPointFactory(1f, 1f)
+                        val centerPoint = factory.createPoint(0.5f, 0.5f)
+                        val action = androidx.camera.core.FocusMeteringAction.Builder(
+                            centerPoint,
+                            androidx.camera.core.FocusMeteringAction.FLAG_AF
+                        ).build()
+                        camera.cameraControl.startFocusAndMetering(action)
+                    } catch (_: Exception) {}
+
+                    // Tap to focus
+                    previewView.setOnTouchListener { view, motionEvent ->
+                        if (motionEvent.action == android.view.MotionEvent.ACTION_UP) {
+                            val factory = previewView.meteringPointFactory
+                            val point = factory.createPoint(motionEvent.x, motionEvent.y)
+                            val action = androidx.camera.core.FocusMeteringAction.Builder(point).build()
+                            camera.cameraControl.startFocusAndMetering(action)
+                            view.performClick()
+                        }
+                        true
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -489,29 +532,84 @@ fun QrCameraScanner(
 class QrBarcodeAnalyzer(
     private val onQrScanned: (String) -> Unit
 ) : ImageAnalysis.Analyzer {
-    private val scanner = BarcodeScanning.getClient()
-    private var hasScanned = false
+    private val mlKitScanner = BarcodeScanning.getClient(
+        BarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .build()
+    )
+    private val zxingReader = MultiFormatReader().apply {
+        setHints(mapOf(
+            DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+            DecodeHintType.TRY_HARDER to true
+        ))
+    }
+
+    private var lastScannedTimestamp = 0L
 
     override fun analyze(imageProxy: ImageProxy) {
+        val now = System.currentTimeMillis()
+        if (now - lastScannedTimestamp < 2500) {
+            imageProxy.close()
+            return
+        }
+
         val mediaImage = imageProxy.image
-        if (mediaImage != null && !hasScanned) {
-            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-            scanner.process(image)
+        if (mediaImage != null) {
+            val rotation = imageProxy.imageInfo.rotationDegrees
+            val inputImage = InputImage.fromMediaImage(mediaImage, rotation)
+
+            mlKitScanner.process(inputImage)
                 .addOnSuccessListener { barcodes ->
+                    var found = false
                     for (barcode in barcodes) {
-                        val rawValue = barcode.rawValue
-                        if (!rawValue.isNullOrBlank() && !hasScanned) {
-                            hasScanned = true
-                            onQrScanned(rawValue)
+                        val raw = barcode.rawValue
+                        if (!raw.isNullOrBlank()) {
+                            found = true
+                            lastScannedTimestamp = System.currentTimeMillis()
+                            onQrScanned(raw)
                             break
                         }
                     }
+                    if (!found) {
+                        tryZxingDecode(imageProxy)
+                    }
+                }
+                .addOnFailureListener {
+                    // Fallback to ZXing if Google Play Services ML Kit is pending download
+                    tryZxingDecode(imageProxy)
                 }
                 .addOnCompleteListener {
                     imageProxy.close()
                 }
         } else {
+            tryZxingDecode(imageProxy)
             imageProxy.close()
+        }
+    }
+
+    private fun tryZxingDecode(imageProxy: ImageProxy) {
+        try {
+            val plane = imageProxy.planes[0]
+            val buffer = plane.buffer
+            val bytes = ByteArray(buffer.remaining())
+            buffer.get(bytes)
+
+            val width = imageProxy.width
+            val height = imageProxy.height
+            val rowStride = plane.rowStride
+
+            val source = PlanarYUVLuminanceSource(
+                bytes, rowStride, height, 0, 0, width, height, false
+            )
+            val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
+            val result = zxingReader.decodeWithState(binaryBitmap)
+
+            if (!result.text.isNullOrBlank()) {
+                lastScannedTimestamp = System.currentTimeMillis()
+                onQrScanned(result.text)
+            }
+        } catch (_: Exception) {
+            // Frame does not contain QR
         }
     }
 }

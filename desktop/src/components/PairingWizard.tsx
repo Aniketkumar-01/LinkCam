@@ -30,9 +30,6 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
     token: sessionToken,
     session_id: sessionId || 'default_session',
     pin: verificationPin,
-    proto: 1,
-    exp: 120,
-    fp: 'SHA256:4a:3b:2c:1d:linkcam:v1.1',
   });
 
   const copyPairingCode = () => {
@@ -98,9 +95,9 @@ export const PairingWizard: React.FC<PairingWizardProps> = ({
             <div className="p-4 bg-white rounded-xl shadow-md">
               <QRCodeSVG
                 value={pairingData}
-                size={220}
-                level="M"
-                includeMargin={false}
+                size={240}
+                level="L"
+                includeMargin={true}
               />
             </div>
 

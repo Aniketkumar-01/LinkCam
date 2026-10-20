@@ -54,7 +54,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         socketTransport = SocketTransport(
-            onStatusChange = { status ->
+            onStatusChange = { status, errorMsg ->
                 runOnUiThread {
                     when (status) {
                         ConnectionStatus.CONNECTED -> {
@@ -73,6 +73,9 @@ class MainActivity : ComponentActivity() {
                         ConnectionStatus.DISCONNECTED -> {
                             isConnectingState.value = false
                             isConnectedState.value = false
+                            if (errorMsg != null) {
+                                errorMessageState.value = errorMsg
+                            }
                             stopStreamingAndTelemetry()
                         }
                     }

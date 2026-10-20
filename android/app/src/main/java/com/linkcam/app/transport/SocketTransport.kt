@@ -20,7 +20,7 @@ enum class ConnectionStatus {
 }
 
 class SocketTransport(
-    private val onStatusChange: (ConnectionStatus) -> Unit,
+    private val onStatusChange: (ConnectionStatus, String?) -> Unit,
     private val onCameraControlReceived: (JsonObject) -> Unit
 ) {
     private var socket: Socket? = null
@@ -34,7 +34,7 @@ class SocketTransport(
     fun connect(host: String, port: Int, token: String, sessionId: String) {
         scope.launch {
             try {
-                onStatusChange(ConnectionStatus.CONNECTING)
+                onStatusChange(ConnectionStatus.CONNECTING, null)
                 val sock = Socket()
                 sock.connect(InetSocketAddress(host, port), 5000)
                 socket = sock
@@ -42,7 +42,7 @@ class SocketTransport(
                 inputStream = sock.getInputStream()
 
                 // Authenticate
-                onStatusChange(ConnectionStatus.AUTHENTICATING)
+                onStatusChange(ConnectionStatus.AUTHENTICATING, null)
                 val authPayload = "$token:$sessionId".toByteArray(Charsets.UTF_8)
                 val authHeader = PacketHeader(
                     packetType = PacketHeader.TYPE_PAIRING_AUTH,
@@ -58,32 +58,38 @@ class SocketTransport(
                 val inStream = inputStream ?: throw java.io.IOException("Socket stream closed")
                 val respHeaderBytes = ByteArray(PacketHeader.HEADER_SIZE)
                 if (!readFully(inStream, respHeaderBytes)) {
-                    disconnect()
+                    disconnect("Server closed connection during handshake")
                     return@launch
                 }
                 val respHeader = PacketHeader.readFrom(ByteBuffer.wrap(respHeaderBytes))
 
                 if (respHeader.packetType == PacketHeader.TYPE_PAIRING_AUTH_RESPONSE) {
                     if (respHeader.payloadLength < 0 || respHeader.payloadLength > PacketHeader.MAX_PAYLOAD_SIZE) {
-                        disconnect()
+                        disconnect("Invalid authentication response length from server")
                         return@launch
                     }
                     val respPayload = ByteArray(respHeader.payloadLength)
                     if (!readFully(inStream, respPayload)) {
-                        disconnect()
+                        disconnect("Incomplete authentication payload received")
                         return@launch
                     }
-                    if (String(respPayload) == "OK") {
+                    val respText = String(respPayload, Charsets.UTF_8)
+                    if (respText == "OK") {
                         isRunning = true
-                        onStatusChange(ConnectionStatus.CONNECTED)
+                        onStatusChange(ConnectionStatus.CONNECTED, null)
                         startReceiveLoop()
                     } else {
-                        disconnect()
+                        disconnect("Auth failed: $respText")
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                disconnect()
+                val msg = when (e) {
+                    is java.net.ConnectException -> "Connection refused ($host:$port). Verify LinkCam Desktop is open and port is forwarded."
+                    is java.net.SocketTimeoutException -> "Timed out connecting to $host:$port. Ensure devices are on same network."
+                    else -> e.localizedMessage ?: "Connection error ($host:$port)"
+                }
+                disconnect(msg)
             }
         }
     }
@@ -249,11 +255,11 @@ class SocketTransport(
         }
     }
 
-    fun disconnect() {
+    fun disconnect(reason: String? = null) {
         isRunning = false
         try {
             socket?.close()
         } catch (ignored: Exception) {}
-        onStatusChange(ConnectionStatus.DISCONNECTED)
+        onStatusChange(ConnectionStatus.DISCONNECTED, reason)
     }
 }

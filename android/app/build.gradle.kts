@@ -87,8 +87,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.code.gson:gson:2.10.1")
 
-    // QR Code Scanning (ML Kit Barcode Scanning)
+    // QR Code Scanning (ML Kit Barcode Scanning + Offline Standalone ZXing)
     implementation("com.google.mlkit:barcode-scanning:17.2.0")
+    implementation("com.google.zxing:core:3.5.3")
 
     // Document Scanning (Google Play Services Document Scanner / Vision Edge)
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
