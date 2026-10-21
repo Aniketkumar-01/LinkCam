@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Grid, Smartphone } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Grid, Smartphone, Video } from 'lucide-react';
 import { CameraControls, CameraLensType } from './CameraControls';
 import { StreamHUD } from './StreamHUD';
 
@@ -37,6 +37,148 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
   const [meetingMode, setMeetingMode] = useState(false);
   const [resolution, setResolution] = useState('1080p60');
   const [showGrid, setShowGrid] = useState(false);
+  const [hasReceivedVideo, setHasReceivedVideo] = useState(false);
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const decoderRef = useRef<any>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    if (!isConnected) {
+      setHasReceivedVideo(false);
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      if (decoderRef.current) {
+        try {
+          decoderRef.current.close();
+        } catch (_) {}
+        decoderRef.current = null;
+      }
+      return;
+    }
+
+    let isDisposed = false;
+
+    // Initialize WebCodecs VideoDecoder if supported by the browser/WebView2
+    const initDecoder = () => {
+      if (typeof window !== 'undefined' && 'VideoDecoder' in window) {
+        try {
+          const dec = new (window as any).VideoDecoder({
+            output: (videoFrame: any) => {
+              if (isDisposed) {
+                videoFrame.close();
+                return;
+              }
+              const canvas = canvasRef.current;
+              if (canvas) {
+                if (canvas.width !== videoFrame.displayWidth || canvas.height !== videoFrame.displayHeight) {
+                  canvas.width = videoFrame.displayWidth;
+                  canvas.height = videoFrame.displayHeight;
+                }
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.drawImage(videoFrame, 0, 0);
+                }
+              }
+              videoFrame.close();
+              setHasReceivedVideo(true);
+            },
+            error: (err: any) => {
+              console.warn('[LinkCam WebCodecs] Decoder error:', err);
+            },
+          });
+
+          dec.configure({
+            codec: 'avc1.640028', // H.264 High Profile Level 4.0 (1080p60)
+            optimizeForLatency: true,
+          });
+
+          decoderRef.current = dec;
+        } catch (e) {
+          console.warn('[LinkCam] WebCodecs initialization failed:', e);
+        }
+      }
+    };
+
+    initDecoder();
+
+    // Connect to Companion local WebSocket server for zero-latency frame feed
+    const connectWs = () => {
+      if (isDisposed) return;
+      try {
+        const ws = new WebSocket('ws://127.0.0.1:8443');
+        ws.binaryType = 'arraybuffer';
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          console.log('[LinkCam UI] Live preview WebSocket stream connected');
+        };
+
+        ws.onmessage = (event) => {
+          if (isDisposed) return;
+          const data = new Uint8Array(event.data as ArrayBuffer);
+          if (data.length <= 32) return; // Must contain 32-byte LinkCam PacketHeader
+
+          const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+          const magic = view.getUint32(0, false);
+          if (magic !== 0x4c4e4b43) return; // 'LNKC'
+
+          const packetType = view.getUint8(5);
+          if (packetType !== 0x01) return; // PacketType::VideoFrame
+
+          const flags = view.getUint8(6);
+          const isKeyframe = (flags & 0x01) !== 0; // FLAG_KEYFRAME
+          const timestamp = Number(view.getBigUint64(12, false));
+
+          const payload = data.subarray(32);
+
+          const decoder = decoderRef.current;
+          if (decoder && decoder.state === 'configured') {
+            try {
+              const chunk = new (window as any).EncodedVideoChunk({
+                type: isKeyframe ? 'key' : 'delta',
+                timestamp: timestamp * 1000,
+                data: payload,
+              });
+              decoder.decode(chunk);
+            } catch (decErr) {
+              // If decode errors on delta before first keyframe, wait for next keyframe
+            }
+          }
+        };
+
+        ws.onerror = () => {
+          // Retry automatically after backoff
+        };
+
+        ws.onclose = () => {
+          if (!isDisposed && isConnected) {
+            setTimeout(connectWs, 2000);
+          }
+        };
+      } catch (err) {
+        console.warn('[LinkCam] WebSocket preview error:', err);
+      }
+    };
+
+    connectWs();
+
+    return () => {
+      isDisposed = true;
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      if (decoderRef.current) {
+        try {
+          decoderRef.current.close();
+        } catch (_) {}
+        decoderRef.current = null;
+      }
+    };
+  }, [isConnected]);
 
   return (
     <div className="flex-1 h-full flex flex-col p-6 gap-4 overflow-hidden">
@@ -45,16 +187,33 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
         {isConnected ? (
           /* Live Stream Viewfinder View */
           <div className="relative w-full h-full flex items-center justify-center bg-black">
-            {/* Visual simulation of phone camera viewfinder */}
             <div className="relative aspect-video w-full h-full max-h-full flex items-center justify-center overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-slate-950/40 pointer-events-none z-10" />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-slate-950/30 pointer-events-none z-10" />
 
-              {/* Viewfinder Video Stream Canvas */}
-              <div className="w-full h-full bg-gradient-to-tr from-slate-900 via-indigo-950/40 to-slate-900 flex items-center justify-center">
-                {/* Center focus reticle */}
-                <div className="w-16 h-16 border border-white/20 rounded-lg flex items-center justify-center">
-                  <div className="w-2 h-2 bg-blue-400 rounded-full animate-ping" />
+              {/* Real Hardware-Decoded Live Video Canvas */}
+              <canvas
+                ref={canvasRef}
+                className={`w-full h-full object-contain transition-opacity duration-300 ${
+                  hasReceivedVideo ? 'opacity-100' : 'opacity-0'
+                }`}
+              />
+
+              {/* Standby Placeholder when waiting for first video frame */}
+              {!hasReceivedVideo && (
+                <div className="absolute inset-0 bg-gradient-to-tr from-slate-900 via-indigo-950/40 to-slate-900 flex flex-col items-center justify-center gap-3">
+                  <div className="w-16 h-16 border border-blue-400/30 rounded-xl flex items-center justify-center bg-blue-500/10 backdrop-blur-sm">
+                    <Video className="w-7 h-7 text-blue-400 animate-pulse" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-slate-200">Starting Live Stream...</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Synchronizing hardware video pipeline</p>
+                  </div>
                 </div>
+              )}
+
+              {/* Center Focus Reticle Overlay */}
+              <div className="absolute pointer-events-none z-10 w-16 h-16 border border-white/25 rounded-lg flex items-center justify-center shadow-lg">
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-ping opacity-75" />
               </div>
 
               {/* Composition 3x3 Grid Overlay */}
@@ -66,8 +225,8 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
                   <div className="border-r border-b border-white/10" />
                   <div className="border-r border-b border-white/10" />
                   <div className="border-b border-white/10" />
-                  <div className="border-r border-white/10" />
-                  <div className="border-r border-white/10" />
+                  <div className="border-r border-b border-white/10" />
+                  <div className="border-r border-b border-white/10" />
                   <div />
                 </div>
               )}

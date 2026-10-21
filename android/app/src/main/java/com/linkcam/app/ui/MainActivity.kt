@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
     private val documentScanner = DocumentScanner()
     private var telemetryJob: Job? = null
     private var activePreviewSurface: Surface? = null
+    private var cachedSpsPps: ByteArray? = null
 
     private val isConnectedState = mutableStateOf(false)
     private val isConnectingState = mutableStateOf(false)
@@ -268,11 +269,25 @@ class MainActivity : ComponentActivity() {
             cameraStreamer = CameraStreamer(
                 context = this,
                 onCodecConfig = { configBytes ->
+                    cachedSpsPps = configBytes
                     val configJson = """{"codec":"H264","width":1920,"height":1080,"fps":60,"spsPpsSize":${configBytes.size}}"""
                     socketTransport?.sendCodecConfig(configJson)
                 },
                 onFrameEncoded = { frameBytes, isKeyframe, timestamp ->
-                    socketTransport?.sendVideoFrame(frameBytes, isKeyframe, timestamp)
+                    val finalBytes = if (isKeyframe && cachedSpsPps != null) {
+                        val hasSps = frameBytes.size > 4 && (frameBytes[4].toInt() and 0x1F) == 7
+                        if (!hasSps) {
+                            val combined = ByteArray(cachedSpsPps!!.size + frameBytes.size)
+                            System.arraycopy(cachedSpsPps!!, 0, combined, 0, cachedSpsPps!!.size)
+                            System.arraycopy(frameBytes, 0, combined, cachedSpsPps!!.size, frameBytes.size)
+                            combined
+                        } else {
+                            frameBytes
+                        }
+                    } else {
+                        frameBytes
+                    }
+                    socketTransport?.sendVideoFrame(finalBytes, isKeyframe, timestamp)
                 }
             )
         }
@@ -285,6 +300,7 @@ class MainActivity : ComponentActivity() {
                     cameraStreamer?.setPreviewSurface(it)
                 }
                 cameraStreamer?.start()
+                cameraStreamer?.requestKeyframe()
             }
         }
 

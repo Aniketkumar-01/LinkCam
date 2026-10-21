@@ -84,7 +84,7 @@ impl VirtualCameraSink {
         let win_shm = Self::init_windows_shm();
 
         Self {
-            is_active: AtomicBool::new(false),
+            is_active: AtomicBool::new(true),
             frames_processed: AtomicU64::new(0),
             latest_frame: Arc::new(RwLock::new(None)),
             #[cfg(target_os = "windows")]

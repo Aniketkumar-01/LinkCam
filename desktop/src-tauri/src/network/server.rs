@@ -253,10 +253,37 @@ impl NetworkServer {
 
     async fn handle_websocket(
         &self,
-        mut ws: tokio_tungstenite::WebSocketStream<TcpStream>,
-        _peer_addr: SocketAddr,
+        ws: tokio_tungstenite::WebSocketStream<TcpStream>,
+        peer_addr: SocketAddr,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        while let Some(msg_res) = ws.next().await {
+        let (mut ws_sender, mut ws_receiver) = ws.split();
+
+        if peer_addr.ip().is_loopback() {
+            let mut video_rx = self.video_frame_tx.subscribe();
+            let send_task = tokio::spawn(async move {
+                while let Ok(packet) = video_rx.recv().await {
+                    if let Ok(bytes) = packet.to_bytes() {
+                        if ws_sender.send(Message::Binary(bytes)).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            });
+
+            while let Some(msg_res) = ws_receiver.next().await {
+                if let Ok(msg) = msg_res {
+                    if msg.is_close() {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            send_task.abort();
+            return Ok(());
+        }
+
+        while let Some(msg_res) = ws_receiver.next().await {
             let msg = match msg_res {
                 Ok(m) => m,
                 Err(_) => break,
@@ -271,7 +298,7 @@ impl NetworkServer {
                                 Vec::new(),
                             );
                             if let Ok(bytes) = pong.to_bytes() {
-                                let _ = ws.send(Message::Binary(bytes)).await;
+                                let _ = ws_sender.send(Message::Binary(bytes)).await;
                             }
                         }
                         PacketType::Disconnect => {

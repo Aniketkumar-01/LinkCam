@@ -150,6 +150,43 @@ async fn manual_usb_pair(server: tauri::State<'_, Arc<NetworkServer>>) -> Result
     Ok("Port 8443 reversed & USB pairing token sent to connected phone!".to_string())
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct LatestFrameMeta {
+    pub has_frame: bool,
+    pub width: u32,
+    pub height: u32,
+    pub timestamp_us: u64,
+    pub sequence: u32,
+    pub is_keyframe: bool,
+    pub total_frames: u64,
+}
+
+#[tauri::command]
+async fn get_latest_frame_info(sink: tauri::State<'_, Arc<VirtualCameraSink>>) -> Result<LatestFrameMeta, String> {
+    let total = sink.total_frames();
+    if let Some(f) = sink.get_latest_frame().await {
+        Ok(LatestFrameMeta {
+            has_frame: true,
+            width: f.width,
+            height: f.height,
+            timestamp_us: f.timestamp_us,
+            sequence: f.sequence,
+            is_keyframe: f.is_keyframe,
+            total_frames: total,
+        })
+    } else {
+        Ok(LatestFrameMeta {
+            has_frame: false,
+            width: 1920,
+            height: 1080,
+            timestamp_us: 0,
+            sequence: 0,
+            is_keyframe: false,
+            total_frames: total,
+        })
+    }
+}
+
 fn main() {
     let (capture_chunk_tx, mut capture_chunk_rx) = mpsc::channel(64);
     let (delivered_tx, mut delivered_rx) = mpsc::channel(16);
@@ -162,13 +199,19 @@ fn main() {
     let server_arc = Arc::new(server);
     let storage_arc = Arc::new(CaptureStorage::new());
 
+    let vcam_sink = Arc::new(VirtualCameraSink::new());
+    vcam_sink.start();
+
     let srv_manage = server_arc.clone();
     let storage_manage = storage_arc.clone();
     let srv_setup = server_arc.clone();
+    let sink_manage = vcam_sink.clone();
+    let sink_setup = vcam_sink.clone();
 
     tauri::Builder::default()
         .manage(srv_manage)
         .manage(storage_manage)
+        .manage(sink_manage)
         .invoke_handler(tauri::generate_handler![
             get_pairing_payload,
             rotate_credentials,
@@ -178,13 +221,13 @@ fn main() {
             get_adb_devices,
             trust_adb_device,
             pair_adb_device,
-            manual_usb_pair
+            manual_usb_pair,
+            get_latest_frame_info
         ])
         .setup(move |_app| {
             println!("[LinkCam] Starting LinkCam Windows Desktop Companion Engine...");
 
-            let vcam_sink = Arc::new(VirtualCameraSink::new());
-            let vcam_device = Arc::new(RwLock::new(VirtualCameraDevice::new(vcam_sink.clone())));
+            let vcam_device = Arc::new(RwLock::new(VirtualCameraDevice::new(sink_setup.clone())));
 
             // Register Windows Virtual Camera in DirectShow/MediaFoundation catalog
             {
@@ -200,7 +243,7 @@ fn main() {
             let capture_receiver = Arc::new(CaptureReceiver::new(delivered_tx, storage_arc.clone()));
 
             // Spawn video frame consumer to virtual camera sink
-            let sink_clone = vcam_sink.clone();
+            let sink_clone = sink_setup.clone();
             tauri::async_runtime::spawn(async move {
                 while let Ok(packet) = video_frame_rx.recv().await {
                     sink_clone.push_packet(packet).await;

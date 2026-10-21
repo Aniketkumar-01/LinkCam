@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Authenticated Wire Transport Encryption (ChaCha20)**: Replaced unencrypted streaming on Wi-Fi with constant-time ChaCha20 authenticated stream encryption (`desktop/src-tauri/src/network/crypto.rs` & `SocketTransport.kt`). Symmetric keys are derived from optical QR / ADB pairing credentials (`auth_token` + `session_id`), setting `FLAG_ENCRYPTED` (`0x08`) on all video frames, audio packets, and instant capture chunks. Defends against network packet sniffing on public/shared Wi-Fi.
 - **Cryptographic Capture Digest Validation**: Added whole-file SHA-256 digest validation in `desktop/src-tauri/src/capture/receiver.rs` upon reassembly of multi-chunk photos and scanned documents, rejecting corrupted, truncated, or tampered file transfers before disk persistence and clipboard delivery.
 - **R8 / ProGuard Keep Rules for ZXing**: Added explicit keep rules for `com.google.zxing.**` in `android/app/proguard-rules.pro` to prevent reflection stripping on release builds.
+- **Loopback Rate-Limit Exemption & PIN Independence**: Permanently exempted `127.0.0.1` from IP rate-limiting in `pairing.rs` and aligned PIN verification independently of session IDs (`clean_token == clean_pin`).
+
+### Mobile Client & Camera Architecture
+- **CameraX-to-Camera2 Safe Driver Handoff**: Added an asynchronous 350ms handoff window in `MainActivity.kt` before starting Camera2, ensuring CameraX completely closes hardware camera sensor `0` and preventing mediaserver HAL crashes upon QR detection.
+- **Defensive Optical Analyzer Exception Guards**: Wrapped `imageProxy.close()` and ZXing YUV buffer reading in `Throwable` defensive try-catch guards.
+- **MediaCodec VBR Hardware Fallback**: Implemented automatic fallback from `BITRATE_MODE_CBR` to `BITRATE_MODE_VBR` in `MediaCodecH264Encoder.kt` for mobile chipsets lacking constant bitrate support.
+- **SingleTask Intent Routing**: Configured `android:launchMode="singleTask"` in `AndroidManifest.xml` and passed `-f 0x20000000` (`FLAG_ACTIVITY_SINGLE_TOP`) in `adb.rs` to route pushed pairing keys directly to `onNewIntent` without spawning duplicate `MainActivity` instances.
+
+### Desktop Companion & Pairing Alignment
+- **Mutual Payload Key Aliasing**: Aligned payload schemas bidirectionally across `auth_token` / `token`, `verification_pin` / `pin`, and `session_id` / `s` in Rust `PairingPayload`, TypeScript `PairingWizard.tsx`, and Android `PairingScreen.kt`.
+- **Tauri v2 Command Invoker Integration**: Replaced ad-hoc `window.__TAURI__` access in `PairingWizard.tsx` with standard `invokeTauri`, restoring real-time ADB device enumeration, attached device display, and the interactive **Trust & Push Token** button.
+- **Hardware-Decoded Live Viewfinder**: Resolved blank desktop viewfinder in `LiveStudio.tsx` by integrating a real-time WebCodecs `VideoDecoder` and `<canvas>` stream receiver connected to a zero-latency WebSocket endpoint (`ws://127.0.0.1:8443`) in Rust `NetworkServer`.
+- **Virtual Camera Sink Activation**: Resolved video packet drop bug by initializing `VirtualCameraSink` active by default and explicitly starting it in `main.rs`.
+
+### Windows DirectShow Virtual Camera Filter
+- **DirectShow Pin Negotiation & Format Enumeration**: Implemented `IEnumMediaTypes` and `IAMStreamConfig` interfaces on `LinkCamOutputPin`, proposing standard `NV12` and `RGB24` formats (1080p60, 1080p30). Eliminates Zoom/OBS/Teams "Cannot start video: Failed to start the video camera" error.
+- **DirectShow Pin Connection Handshake**: Complied with DirectShow contract by calling `pReceivePin->ReceiveConnection(this, &mt)` and properly negotiating `IMemAllocator` with fallback to `CLSID_MemoryAllocator`.
+- **Hardware H.264 MFT In-Process Decoding**: Integrated Windows Media Foundation hardware H.264 MFT decoder (`CLSID_CMSH264DecoderMFT`) in `LinkCamDShow.cpp`, decoding H.264 NAL units into uncompressed NV12/RGB frames with anti-tearing seqlock validation.
+- **Graceful Standby Frame Generation**: Outputting a 60 FPS standby frame when waiting for phone stream so conferencing apps start cleanly with zero errors.
+- **SPS/PPS Keyframe Caching**: Cached codec configuration NAL units in `MainActivity.kt` and prepended to IDR keyframes for instant video synchronization.
 
 ### CI/CD & Production Release Pipeline
 - **DirectShow COM Virtual Camera Filter Compilation in CI**: Added CMake MSVC 64-bit build step in `.github/workflows/release.yml` to compile `LinkCamDShow64.dll` prior to installer generation.

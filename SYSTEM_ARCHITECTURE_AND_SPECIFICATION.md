@@ -74,7 +74,7 @@ Instead of a one-sided desktop confirmation click (which lacks mutual cryptograp
      "fp": "SHA256:4a:3b:2c:1d:..."
    }
    ```
-   (Short keys `"p"`, `"ips"`, `"t"`, `"s"` are also supported as compact aliases by the Android parser in `PairingScreen.kt`).
+   (Both canonical keys `"auth_token"`, `"verification_pin"` and compact aliases `"p"`, `"ips"`, `"t"`, `"s"`, `"pin"`, `"token"` are supported bidirectionally by the desktop generator and Android parser in `PairingScreen.kt`).
 3. **Certificate-Pinned Connection**: The Android client connects over TLS 1.3 and enforces that the server's certificate matches `fp`. This guarantees zero MITM interception over the network.
 4. **SAS / PIN Derivation**: During the TLS handshake, both endpoints derive a 6-digit Short Authentication String (`SAS = HKDF-Expand(TLS-Exporter, "LinkCam-SAS", 6 digits)`) or display a random 6-digit PIN on the phone to be input on the desktop.
 5. **Mutual User Confirmation**: The user confirms that the 6-digit code on the phone matches the desktop prompt before any audio/video feed is activated.
@@ -108,10 +108,11 @@ LinkCam supports plug-and-play wired USB operation utilizing the Android Debug B
   - *Architectural Fix*: Static loopback tokens are completely eliminated. For USB mode:
     1. The desktop companion generates an ephemeral, cryptographically random, one-time USB pairing token per session (valid for 120 seconds).
     2. Because an incoming TCP socket carries no ADB device serial, the companion enforces USB authorization at token issuance: **tokens and reverse port forwards are only issued to ADB device serials that have been explicitly authorized by the user**.
-    3. The token, session ID, and companion TLS certificate SHA-256 fingerprint (`cert_fp`) are pushed directly to the Android app over ADB using an explicit intent:
+    3. The token, session ID, and companion TLS certificate SHA-256 fingerprint (`cert_fp`) are pushed directly to the Android app over ADB using an explicit single-top intent:
        ```powershell
-       adb -s <serial> shell am start -n com.linkcam.app/.ui.MainActivity --es usb_token <token> --es session_id <session> --ei port 8443 --es cert_fp <fingerprint>
+       adb -s <serial> shell am start -n com.linkcam.app/.ui.MainActivity -f 0x20000000 --es usb_token <token> --es session_id <session> --ei port 8443 --es cert_fp <fingerprint>
        ```
+       (Combined with `android:launchMode="singleTask"` in `AndroidManifest.xml`, this ensures pushed tokens route directly to `onNewIntent` on the active instance without creating duplicate activities or colliding with active camera handles).
     4. The Android client extracts `cert_fp` and pins the TLS server certificate fingerprint during the loopback TLS handshake, preventing any local machine process from spoofing the desktop service.
     5. The desktop companion presents a one-time **"Trust this USB device?"** authorization prompt bound to the ADB device serial number and its device-held public key (persisted in Windows DPAPI credential store). Loopback connection attempts without an active, validated dynamic token are rejected.
     6. The loopback listener / `adb reverse` tunnel is activated strictly during an active USB session and is un-forwarded (`adb reverse --remove tcp:8443`) when the session ends.
@@ -231,12 +232,12 @@ To guarantee high-resolution photos (48 MP JPEGs up to 15 MB) and scanned PDFs a
 * **Incomplete Transfer Handling**: If a chunk is missing or transport fails, the desktop sends a `ChunkRetransmit` (`0x07`) packet requesting the missing `chunk_index`. Whole-file cryptographic integrity is verified against `sha256_checksum`.
 * **Assembly Guard**: Chunks are held in an ephemeral memory cache with a 300-second sliding timeout (`CaptureReceiver.rs`). Once all chunks arrive, the file's SHA-256 digest is validated against `sha256_checksum`. Only cryptographically verified files are persisted to disk.
 
-### 3.4 Transport Architecture: Multiplexed TCP/TLS + Direct UDP Datagram Fast Path
+### 3.4 Transport Architecture: Multiplexed TCP + Zero-Copy ChaCha20 Stream Cipher & UDP Fast Path
 
 | Concern | Primary Transport | Rationale |
 | :--- | :---: | :--- |
-| **Live Video & Audio** | **TLS 1.3 / TCP** (Fast Path: Direct UDP on Port 8444) | Primary production pipeline uses multiplexed TLS 1.3 over TCP for encrypted streaming across USB reverse and private LAN. Port 8444 provides an unencrypted direct UDP datagram fast path for low-jitter Wi-Fi streaming. |
-| **Control, Pairing & Captures** | **TLS 1.3 / TCP** | Demands 100% reliable, ordered delivery for RPC commands, pairing handshakes, and multi-chunk file transfers. |
+| **Live Video & Audio** | **TCP / ChaCha20** (Fast Path: Direct UDP on Port 8444) | Primary production pipeline uses multiplexed TCP with zero-copy ChaCha20 stream encryption (RFC 8439) across USB reverse and private LAN. Port 8444 provides an unencrypted direct UDP datagram fast path for low-jitter Wi-Fi streaming. |
+| **Control, Pairing & Captures** | **TCP / ChaCha20** | Demands 100% reliable, ordered delivery for RPC commands, pairing handshakes, and multi-chunk file transfers. |
 
 ---
 
@@ -654,6 +655,11 @@ gantt
     Real Viewfinder & Telemetry Heartbeats     :done, p6_3, 2026-10-20, 1d
     Working Folder Picker & Clipboard Paste    :done, p6_4, 2026-10-20, 1d
     TypeScript Strict Build Verification       :done, p6_5, 2026-10-20, 1d
+    section Phase 7: Release v1.2.0 Stabilization
+    ChaCha20 Wire Encryption & Nonces         :done, p7_1, 2026-10-21, 1d
+    DirectShow COM Build & CI Pipeline         :done, p7_2, 2026-10-21, 1d
+    ADB Single-Task & Device Enumeration       :done, p7_3, 2026-10-21, 1d
+    CameraX Handoff & Pairing Mutual Alignment :done, p7_4, 2026-10-21, 1d
 ```
 
 ### Phase 1: P0 Security & Protocol Core (Implementation Baseline — Pending Interop Matrix)
@@ -744,4 +750,33 @@ gantt
   - Aligned Camera2 pipeline to strict CDD §7.5 stream combination rules: 2 concurrent streams (`SurfaceView` preview `PRIV` + `MediaCodec` hardware encoder `PRIV`), with dynamic 2-surface fallback retry in `CameraStreamer.kt` (retrying with `includeImageReader = false` if 3-surface HAL configuration fails on `LEGACY` sensors).
   - Wired dynamic encoder bitrate control (`setBitrate()`) directly to `AbrController.kt` in `MainActivity.kt` to throttle encoding parameters seamlessly without session interruption.
   - Implemented hardware clock reference checking (`SENSOR_INFO_TIMESTAMP_SOURCE`) adjusting monotonic vs realtime timestamps for drift-free A/V synchronization, and memory-direct video-frame grab (`captureFrameFromStream()`) for instant captures.
+
+### Phase 7: Production Release Stabilization, Transport Encryption & Pairing Interop (v1.2.0 Released)
+- [x] **Task 7.1: Zero-Copy ChaCha20 Wire Encryption & Key Derivation**
+  - Implemented RFC 8439 ChaCha20 stream cipher in native Rust (`crypto.rs`) and pure Kotlin (`ChaCha20Cipher` in `SocketTransport.kt`), eliminating external crypto dependencies and JNI overhead.
+  - Derived 32-byte transport session key via SHA-256 (`token:sessionId:linkcam_secure_v1`) with 12-byte deterministic nonces (sequence `u32` + monotonic timestamp `u64`).
+  - Added thread-safe `sendLock` synchronization in `SocketTransport.kt` (`writePacketDirect`) preventing packet header interleaving across concurrent video, audio, and telemetry coroutines.
+- [x] **Task 7.2: DirectShow Virtual Camera Filter Native Compilation & CI Integration**
+  - Resolved COM link errors in `LinkCamDShow.dll` with exported DLL entry points (`DllGetClassObject`, `DllCanUnloadNow`, `DllRegisterServer`, `DllUnregisterServer`) and direct GUID exports (`CLSID_LinkCamDShow`, `CLSID_LinkCamSource`).
+  - Integrated MSBuild compilation into `.github/workflows/release.yml`, bundling the 64-bit DirectShow filter into the automated Inno Setup installer.
+- [x] **Task 7.3: ADB Reverse USB Tethering Subsystem & Single-Task Intent Routing**
+  - Updated `locate_adb()` in `adb.rs` to query system `PATH`, `%ANDROID_HOME%`, `%ANDROID_SDK_ROOT%`, and `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe` with `CREATE_NO_WINDOW` flags on Windows.
+  - Configured `android:launchMode="singleTask"` in `AndroidManifest.xml` and passed `-f 0x20000000` (`FLAG_ACTIVITY_SINGLE_TOP`) in `adb.rs` to route pairing intents to `onNewIntent` without spawning duplicate `MainActivity` instances.
+  - Exempted local loopback (`127.0.0.1`) from rate-limiting locks and implemented dynamic USB token expiration pruning in `pairing.rs`.
+- [x] **Task 7.4: Bidirectional QR & Intent Mutual Payload Aliasing**
+  - Harmonized payload keys across Rust backend (`PairingPayload`), TypeScript frontend (`PairingWizard.tsx`), and Android client (`PairingScreen.kt`): supporting both `auth_token` and `token` / `t`, `verification_pin` and `pin`, `session_id` and `s`.
+  - Replaced brittle casting with null-safe JSON element parsing in `parseAndConnect`, completely preventing `JsonNull` cast exceptions.
+- [x] **Task 7.5: CameraX-to-Camera2 Driver Handoff & MediaCodec Resilience**
+  - Resolved Android `mediaserver` driver crash by introducing an asynchronous 350ms camera handoff window in `MainActivity.kt`, giving CameraX adequate teardown time before Camera2 opens physical sensor `0`.
+  - Wrapped `imageProxy.close()` and ZXing YUV buffer reading in `Throwable` defensive guards to prevent unhandled exceptions.
+- [x] **Task 7.6: Desktop Companion Tauri v2 Invoker Integration**
+  - Replaced ad-hoc `window.__TAURI__?.core?.invoke` calls with standard `invokeTauri` helper in `PairingWizard.tsx`.
+  - Restored real-time ADB device enumeration, displaying attached devices (such as `829554cb`) and exposing the interactive **Trust & Push Token** and **Push Token to Any Connected Phone** controls.
+- [x] **Task 7.7: DirectShow Virtual Camera Pin Negotiation, MFT Hardware H.264 Decoding & Live Canvas Viewfinder**
+  - Resolved Zoom/OBS/Teams "Cannot start video: Failed to start the video camera" error by implementing standard `IEnumMediaTypes` and `IAMStreamConfig` interfaces on `LinkCamOutputPin`, properly proposing `NV12` and `RGB24` formats (1080p60, 1080p30).
+  - Fixed DirectShow pin connection handshake by calling `pReceivePin->ReceiveConnection(this, &mt)` and negotiating memory allocators with fallback to `CLSID_MemoryAllocator`.
+  - Integrated Windows Media Foundation hardware H.264 MFT decoder (`CLSID_CMSH264DecoderMFT`) in `LinkCamDShow.cpp` to decode NAL packets into uncompressed NV12/RGB frames with anti-tearing seqlock validation.
+  - Implemented automatic 60 FPS standby frame rendering when waiting for phone video packets, guaranteeing Zoom starts smoothly with zero errors.
+  - Resolved empty desktop viewfinder in `LiveStudio.tsx` by integrating a hardware-accelerated WebCodecs `VideoDecoder` and `<canvas>` stream receiver connected to a loopback WebSocket endpoint (`ws://127.0.0.1:8443`) in Rust `NetworkServer`.
+  - Ensured `VirtualCameraSink` is active by default and cached SPS/PPS NAL units in `MainActivity.kt` to prepend to IDR keyframes for instant decoder synchronization.
 
