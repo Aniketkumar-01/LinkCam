@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Seqlock Race Condition & Memory Safety**: Eliminated in-place decoding on shared memory by snapshotting packet data into a local buffer before decoding, preventing torn frames when the producer pushes subsequent frames. Enforced buffer capacity bounds checking before writing standby frames.
 - **Duplicate "LinkCam Virtual Camera" in Zoom**: Updated `DllRegisterServer()` and `DllUnregisterServer()` to clean legacy or orphaned registrations in `HKEY_LOCAL_MACHINE`, ensuring DirectShow's merged `HKEY_CLASSES_ROOT` view enumerates only a single camera instance.
 - **Inno Setup Uninstaller Residue**: Added `[UninstallDelete]` in `desktop/installer.iss` to completely purge `{app}` installation directory and `%LOCALAPPDATA%` application cache/config folders (`LinkCam` and `com.linkcam.desktop`) upon uninstallation.
+- **DirectShow Virtual Camera MSVC Compilation (`cguid.h` / `GUID_NULL`)**: Resolved MSVC `error C2065: 'GUID_NULL': undeclared identifier` in `desktop/vcam-dshow/LinkCamDShow.cpp` by including `<cguid.h>` and standard zero-initialization (`GUID sub = {0};`).
 
 ## [1.2.1] - 2026-10-21
 

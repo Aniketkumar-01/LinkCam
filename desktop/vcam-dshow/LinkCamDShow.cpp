@@ -6,6 +6,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <initguid.h>
+#include <cguid.h>
 #include <dshow.h>
 #include <mfapi.h>
 #include <mftransform.h>
@@ -196,7 +197,7 @@ public:
         if (!m_pDecoder) return false;
         IMFMediaType* pOutType = NULL;
         for (DWORD i = 0; SUCCEEDED(m_pDecoder->GetOutputAvailableType(m_outStreamId, i, &pOutType)); i++) {
-            GUID sub = GUID_NULL;
+            GUID sub = {0};
             pOutType->GetGUID(MF_MT_SUBTYPE, &sub);
             if (sub == MFVideoFormat_NV12) {
                 UINT32 w = 0, h = 0;
