@@ -47,6 +47,13 @@ DEFINE_GUID(LinkCam_AMPROPSETID_Pin,
 DEFINE_GUID(LinkCam_PIN_CATEGORY_CAPTURE,
     0xfb6c4281, 0x0353, 0x11d1, 0x90, 0x5f, 0x00, 0x00, 0xc0, 0xcc, 0x16, 0xba);
 
+// Windows Media Foundation H.264 Decoder MFT: {62CE7E72-4C71-4D20-B15D-452831A87D9D}
+#pragma comment(lib, "wmcodecdspuuid.lib")
+#ifndef CLSID_CMSH264DecoderMFT
+DEFINE_GUID(CLSID_CMSH264DecoderMFT,
+    0x62ce7e72, 0x4c71, 0x4d20, 0xb1, 0x5d, 0x45, 0x28, 0x31, 0xa8, 0x7d, 0x9d);
+#endif
+
 #define SHM_NAME L"Local\\LinkCam_Video_Shm"
 #define SHM_EVENT_NAME L"Local\\LinkCam_Video_Event"
 #define SHM_MAGIC 0x4C4E4B43 // 'LNKC'

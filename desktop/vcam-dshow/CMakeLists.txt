@@ -17,6 +17,7 @@ target_link_libraries(LinkCamDShow64 PRIVATE
     advapi32
     mfplat
     mfuuid
+    wmcodecdspuuid
 )
 
 set_target_properties(LinkCamDShow64 PROPERTIES
