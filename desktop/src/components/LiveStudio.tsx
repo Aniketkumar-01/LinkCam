@@ -12,6 +12,7 @@ interface LiveStudioProps {
   isCharging: boolean;
   connectionMode: 'Usb' | 'DirectHotspot' | 'WiFi';
   isVcamActive: boolean;
+  serverPort?: number;
   onTriggerPhoto: () => void;
   onTriggerDocumentScan: () => void;
   onOpenDiagnostics?: () => void;
@@ -26,6 +27,7 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
   isCharging,
   connectionMode,
   isVcamActive,
+  serverPort = 8443,
   onTriggerPhoto,
   onTriggerDocumentScan,
   onOpenDiagnostics,
@@ -38,14 +40,20 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
   const [resolution, setResolution] = useState('1080p60');
   const [showGrid, setShowGrid] = useState(false);
   const [hasReceivedVideo, setHasReceivedVideo] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('Synchronizing hardware video pipeline');
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const decoderRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const hasReceivedVideoRef = useRef(false);
+  const hasSeenKeyframeRef = useRef(false);
 
   useEffect(() => {
     if (!isConnected) {
       setHasReceivedVideo(false);
+      hasReceivedVideoRef.current = false;
+      hasSeenKeyframeRef.current = false;
+      setStatusMessage('Connecting to live stream pipeline...');
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -60,45 +68,83 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
     }
 
     let isDisposed = false;
+    hasReceivedVideoRef.current = false;
+    hasSeenKeyframeRef.current = false;
 
     // Initialize WebCodecs VideoDecoder if supported by the browser/WebView2
-    const initDecoder = () => {
-      if (typeof window !== 'undefined' && 'VideoDecoder' in window) {
-        try {
-          const dec = new (window as any).VideoDecoder({
-            output: (videoFrame: any) => {
-              if (isDisposed) {
-                videoFrame.close();
-                return;
-              }
-              const canvas = canvasRef.current;
-              if (canvas) {
-                if (canvas.width !== videoFrame.displayWidth || canvas.height !== videoFrame.displayHeight) {
-                  canvas.width = videoFrame.displayWidth;
-                  canvas.height = videoFrame.displayHeight;
-                }
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                  ctx.drawImage(videoFrame, 0, 0);
-                }
-              }
-              videoFrame.close();
-              setHasReceivedVideo(true);
-            },
-            error: (err: any) => {
-              console.warn('[LinkCam WebCodecs] Decoder error:', err);
-            },
-          });
+    const initDecoder = async () => {
+      if (typeof window === 'undefined' || !('VideoDecoder' in window)) {
+        console.warn('[LinkCam WebCodecs] VideoDecoder API not supported in this runtime');
+        setStatusMessage('Hardware WebCodecs not supported in browser runtime');
+        return;
+      }
 
-          dec.configure({
-            codec: 'avc1.640028', // H.264 High Profile Level 4.0 (1080p60)
-            optimizeForLatency: true,
-          });
-
-          decoderRef.current = dec;
-        } catch (e) {
-          console.warn('[LinkCam] WebCodecs initialization failed:', e);
+      try {
+        if (decoderRef.current && decoderRef.current.state !== 'closed') {
+          try {
+            decoderRef.current.close();
+          } catch (_) {}
         }
+
+        const dec = new (window as any).VideoDecoder({
+          output: (videoFrame: any) => {
+            if (isDisposed) {
+              videoFrame.close();
+              return;
+            }
+            const canvas = canvasRef.current;
+            if (canvas) {
+              if (canvas.width !== videoFrame.displayWidth || canvas.height !== videoFrame.displayHeight) {
+                canvas.width = videoFrame.displayWidth;
+                canvas.height = videoFrame.displayHeight;
+              }
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(videoFrame, 0, 0);
+              }
+            }
+            videoFrame.close();
+            if (!hasReceivedVideoRef.current) {
+              hasReceivedVideoRef.current = true;
+              setHasReceivedVideo(true);
+            }
+          },
+          error: (err: any) => {
+            console.warn('[LinkCam WebCodecs] Decoder error:', err);
+            hasSeenKeyframeRef.current = false;
+            // Attempt clean recreation on next keyframe
+            setTimeout(() => {
+              if (!isDisposed) initDecoder();
+            }, 100);
+          },
+        });
+
+        // W3C Annex B configuration with automatic fallback
+        const configs = [
+          { codec: 'avc1.42001f', avc: { format: 'annexb' }, optimizeForLatency: true },
+          { codec: 'avc1.640028', avc: { format: 'annexb' }, optimizeForLatency: true },
+          { codec: 'avc1.4d002a', avc: { format: 'annexb' }, optimizeForLatency: true },
+        ];
+
+        let chosenConfig = configs[0];
+        if (typeof (window as any).VideoDecoder?.isConfigSupported === 'function') {
+          for (const cfg of configs) {
+            try {
+              const res = await (window as any).VideoDecoder.isConfigSupported(cfg);
+              if (res && res.supported) {
+                chosenConfig = cfg;
+                break;
+              }
+            } catch (_) {}
+          }
+        }
+
+        dec.configure(chosenConfig);
+        decoderRef.current = dec;
+        console.log('[LinkCam WebCodecs] Decoder configured with Annex B:', chosenConfig);
+      } catch (e) {
+        console.warn('[LinkCam] WebCodecs initialization failed:', e);
+        setStatusMessage('Hardware video decoder initialization failed');
       }
     };
 
@@ -108,18 +154,21 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
     const connectWs = () => {
       if (isDisposed) return;
       try {
-        const ws = new WebSocket('ws://127.0.0.1:8443');
+        const wsUrl = `ws://127.0.0.1:${serverPort}`;
+        const ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
         wsRef.current = ws;
 
         ws.onopen = () => {
-          console.log('[LinkCam UI] Live preview WebSocket stream connected');
+          console.log(`[LinkCam UI] Live preview WebSocket stream connected to ${wsUrl}`);
+          setStatusMessage('Waiting for camera keyframe...');
         };
 
         ws.onmessage = (event) => {
           if (isDisposed) return;
           const data = new Uint8Array(event.data as ArrayBuffer);
-          if (data.length <= 32) return; // Must contain 32-byte LinkCam PacketHeader
+          const HEADER_SIZE = 24; // 24-byte LinkCam Wire PacketHeader
+          if (data.length <= HEADER_SIZE) return;
 
           const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
           const magic = view.getUint32(0, false);
@@ -129,23 +178,42 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
           if (packetType !== 0x01) return; // PacketType::VideoFrame
 
           const flags = view.getUint8(6);
-          const isKeyframe = (flags & 0x01) !== 0; // FLAG_KEYFRAME
+          const isKeyframeHeader = (flags & 0x01) !== 0; // FLAG_KEYFRAME
           const timestamp = Number(view.getBigUint64(12, false));
 
-          const payload = data.subarray(32);
+          const payload = data.subarray(HEADER_SIZE);
 
-          const decoder = decoderRef.current;
+          // Robust keyframe detection: check header flag OR Annex B NAL unit types (SPS = 7, IDR = 5)
+          const hasSpsOrIdr = payload.length > 4 && (
+            (payload[0] === 0 && payload[1] === 0 && payload[2] === 0 && payload[3] === 1 && ((payload[4] & 0x1f) === 7 || (payload[4] & 0x1f) === 5)) ||
+            (payload[0] === 0 && payload[1] === 0 && payload[2] === 1 && ((payload[3] & 0x1f) === 7 || (payload[3] & 0x1f) === 5))
+          );
+          const isKeyframe = isKeyframeHeader || hasSpsOrIdr;
+
+          // WebCodecs requires that the first decoded chunk after configure/reset MUST be a keyframe.
+          if (!hasSeenKeyframeRef.current) {
+            if (!isKeyframe) {
+              return; // Wait for initial IDR keyframe containing SPS/PPS before feeding decoder
+            }
+            hasSeenKeyframeRef.current = true;
+          }
+
+          let decoder = decoderRef.current;
           if (decoder && decoder.state === 'configured') {
             try {
               const chunk = new (window as any).EncodedVideoChunk({
                 type: isKeyframe ? 'key' : 'delta',
-                timestamp: timestamp * 1000,
+                timestamp: timestamp > 0 ? timestamp * 1000 : performance.now() * 1000,
                 data: payload,
               });
               decoder.decode(chunk);
             } catch (decErr) {
-              // If decode errors on delta before first keyframe, wait for next keyframe
+              console.warn('[LinkCam WebCodecs] Decode error, resetting for next keyframe:', decErr);
+              hasSeenKeyframeRef.current = false;
             }
+          } else if (!decoder || decoder.state === 'closed') {
+            hasSeenKeyframeRef.current = false;
+            initDecoder();
           }
         };
 
@@ -155,7 +223,7 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
 
         ws.onclose = () => {
           if (!isDisposed && isConnected) {
-            setTimeout(connectWs, 2000);
+            setTimeout(connectWs, 1500);
           }
         };
       } catch (err) {
@@ -178,7 +246,7 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
         decoderRef.current = null;
       }
     };
-  }, [isConnected]);
+  }, [isConnected, serverPort]);
 
   return (
     <div className="flex-1 h-full flex flex-col p-6 gap-4 overflow-hidden">
@@ -206,7 +274,7 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
                   </div>
                   <div className="text-center">
                     <p className="text-sm font-medium text-slate-200">Starting Live Stream...</p>
-                    <p className="text-xs text-slate-400 mt-0.5">Synchronizing hardware video pipeline</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{statusMessage}</p>
                   </div>
                 </div>
               )}

@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.2.0",
-    [string]$Message = "Release v1.2.0: DirectShow COM filter compilation, signed Android release, and transport encryption"
+    [string]$Tag = "v1.2.1",
+    [string]$Message = "Release v1.2.1: Fix DirectShow MFT link errors, resolve Live Studio video decode synchronization, and add decoder diagnostics"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan

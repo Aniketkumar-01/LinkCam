@@ -202,6 +202,7 @@ export const App: React.FC = () => {
             isCharging={isCharging}
             connectionMode={connectionMode}
             isVcamActive={true}
+            serverPort={serverPort}
             onTriggerPhoto={handleTriggerPhoto}
             onTriggerDocumentScan={handleTriggerDocumentScan}
             onOpenDiagnostics={() => setShowDiagnostics(true)}

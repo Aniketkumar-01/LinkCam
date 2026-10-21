@@ -12,6 +12,7 @@
 #include <mferror.h>
 #include <wmcodecdsp.h>
 #include <cstdint>
+#include <cstdio>
 #include <atomic>
 #include <algorithm>
 #include <vector>
@@ -235,7 +236,12 @@ public:
 
         HRESULT hr = m_pDecoder->ProcessInput(m_inStreamId, pSample, 0);
         pSample->Release();
+
         if (FAILED(hr)) {
+            char msg[160];
+            sprintf_s(msg, "[LinkCam Decoder] ProcessInput failed: 0x%08lX\n",
+                      static_cast<unsigned long>(hr));
+            OutputDebugStringA(msg);
             return false;
         }
 
@@ -258,6 +264,14 @@ public:
 
         DWORD dwStatus = 0;
         hr = m_pDecoder->ProcessOutput(0, 1, &outputBuffer, &dwStatus);
+
+        if (FAILED(hr)) {
+            char msg[200];
+            sprintf_s(msg,
+                      "[LinkCam Decoder] ProcessOutput failed: 0x%08lX, input=%zu bytes\n",
+                      static_cast<unsigned long>(hr), nalSize);
+            OutputDebugStringA(msg);
+        }
         if (SUCCEEDED(hr) && outputBuffer.pSample) {
             IMFMediaBuffer* pResBuf = NULL;
             if (SUCCEEDED(outputBuffer.pSample->ConvertToContiguousBuffer(&pResBuf)) && pResBuf) {

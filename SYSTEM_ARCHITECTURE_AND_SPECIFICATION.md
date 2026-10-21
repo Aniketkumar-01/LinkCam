@@ -1,9 +1,9 @@
 # LinkCam — Comprehensive Technical Architecture & System Specification
 
-**Version:** 1.2.0 (Production Release Baseline)  
-**Status:** Architecture & Implementation Baseline — Synchronized with v1.2.0 Release Codebase  
+**Version:** 1.2.1 (Production Release Baseline)  
+**Status:** Architecture & Implementation Baseline — Synchronized with v1.2.1 Release Codebase  
 **Author:** LinkCam Engineering Team  
-**Last Updated:** October 2026 (v1.2.0 DirectShow CI Compilation, Release APK Signing & ChaCha20 Transport Encryption)  
+**Last Updated:** October 2026 (v1.2.1 DirectShow MFT Linker Fix, Live Studio Viewfinder Synchronization & Decoder Diagnostics)  
 **Repository:** `Aniketkumar-01/LinkCam`  
 
 ---
@@ -779,4 +779,5 @@ gantt
   - Implemented automatic 60 FPS standby frame rendering when waiting for phone video packets, guaranteeing Zoom starts smoothly with zero errors.
   - Resolved empty desktop viewfinder in `LiveStudio.tsx` by integrating a hardware-accelerated WebCodecs `VideoDecoder` and `<canvas>` stream receiver connected to a loopback WebSocket endpoint (`ws://127.0.0.1:8443`) in Rust `NetworkServer`.
   - Ensured `VirtualCameraSink` is active by default and cached SPS/PPS NAL units in `MainActivity.kt` to prepend to IDR keyframes for instant decoder synchronization.
+  - Resolved frozen "Starting Live Stream... Synchronizing hardware video pipeline" placeholder in `LiveStudio.tsx` by correcting wire packet `HEADER_SIZE` from 32 to 24 bytes, configuring WebCodecs with `{ avc: { format: 'annexb' } }`, enforcing keyframe-first decode synchronization, and handling Tokio `RecvError::Lagged` in `server.rs` to prevent WebSocket task exit.
 

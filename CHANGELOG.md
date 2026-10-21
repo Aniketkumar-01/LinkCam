@@ -5,6 +5,18 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-10-21
+
+### Fixed
+- **DirectShow MFT Linker Resolution (`CLSID_CMSH264DecoderMFT`)**: Resolved `LNK2019: unresolved external symbol CLSID_CMSH264DecoderMFT` in `desktop/vcam-dshow` by linking `wmcodecdspuuid.lib` in `CMakeLists.txt` and `build.bat`, and instantiating `DEFINE_GUID(CLSID_CMSH264DecoderMFT, ...)` in `LinkCamDShow.cpp` with `#pragma comment(lib, "wmcodecdspuuid.lib")`.
+- **Live Studio Hardware Viewfinder Freezing**: Resolved frozen "Starting Live Stream... Synchronizing hardware video pipeline" in `LiveStudio.tsx` by correcting wire protocol `HEADER_SIZE` from 32 to 24 bytes, preventing the 8-byte truncation of H.264 NAL headers and start codes.
+- **WebCodecs Annex B Bitstream Configuration**: Configured `VideoDecoder` with `{ avc: { format: 'annexb' }, optimizeForLatency: true }` in `LiveStudio.tsx` with dynamic codec capability probing (`avc1.42001f`, `avc1.640028`, `avc1.4d002a`).
+- **WebCodecs Keyframe Synchronization Guard**: Added keyframe-first gating and automatic error recovery so the decoder waits for SPS/PPS parameters and recovers seamlessly on subsequent keyframes if an error occurs.
+- **Tokio Broadcast Lag Resilience (`RecvError::Lagged`)**: Handled `tokio::sync::broadcast::error::RecvError::Lagged` in `server.rs` (loopback WebSocket stream) and `main.rs` (virtual camera sink consumer), preventing worker task termination and continuous frame drop during buffer lag.
+
+### Added
+- **Media Foundation Decoder Diagnostics**: Added temporary `OutputDebugStringA` diagnostic logging in `MftH264Decoder::Decode()` for tracking `ProcessInput` and `ProcessOutput` `HRESULT` return codes.
+
 ## [1.2.0] - 2026-10-20
 
 ### Security & Hardening

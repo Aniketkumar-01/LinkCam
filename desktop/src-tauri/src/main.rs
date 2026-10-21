@@ -245,8 +245,19 @@ fn main() {
             // Spawn video frame consumer to virtual camera sink
             let sink_clone = sink_setup.clone();
             tauri::async_runtime::spawn(async move {
-                while let Ok(packet) = video_frame_rx.recv().await {
-                    sink_clone.push_packet(packet).await;
+                loop {
+                    match video_frame_rx.recv().await {
+                        Ok(packet) => {
+                            sink_clone.push_packet(packet).await;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            eprintln!("[LinkCam VCam] Frame consumer lagged by {} frames; resuming", skipped);
+                            continue;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            break;
+                        }
+                    }
                 }
             });
 

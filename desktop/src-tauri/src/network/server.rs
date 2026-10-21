@@ -261,9 +261,20 @@ impl NetworkServer {
         if peer_addr.ip().is_loopback() {
             let mut video_rx = self.video_frame_tx.subscribe();
             let send_task = tokio::spawn(async move {
-                while let Ok(packet) = video_rx.recv().await {
-                    if let Ok(bytes) = packet.to_bytes() {
-                        if ws_sender.send(Message::Binary(bytes)).await.is_err() {
+                loop {
+                    match video_rx.recv().await {
+                        Ok(packet) => {
+                            if let Ok(bytes) = packet.to_bytes() {
+                                if ws_sender.send(Message::Binary(bytes)).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            eprintln!("[LinkCam WebSocket] Loopback video stream lagged by {} frames; resuming", skipped);
+                            continue;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                             break;
                         }
                     }
