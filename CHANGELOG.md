@@ -5,6 +5,16 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-10-21
+
+### Fixed
+- **DirectShow Filter Graph Stalling in Pause (`VFW_S_CANT_CUE`)**: Updated `LinkCamFilter::Pause()` and `LinkCamFilter::GetState()` to return `VFW_S_CANT_CUE` and immediately trigger worker streaming. This prevents DirectShow filter graph managers (in Zoom, OBS, Chrome/Brave) from blocking indefinitely waiting for preroll samples from a live camera source.
+- **Media Foundation H.264 MFT Stream Renegotiation (`MF_E_TRANSFORM_STREAM_CHANGE`)**: Implemented dynamic stream change handling (`MF_E_TRANSFORM_STREAM_CHANGE` / `0xC00D6D61` and `MFT_OUTPUT_DATA_BUFFER_FORMAT_CHANGE`). Instead of bailing out with decoder failure, `MftH264Decoder::Decode()` queries `GetOutputAvailableType` for `MFVideoFormat_NV12`, dynamically updates dimensions, re-allocates output buffers matching `GetOutputStreamInfo`, and retries `ProcessOutput`.
+- **Chromium / Modern App Format Negotiation (`MEDIASUBTYPE_RGB32`)**: Added `MEDIASUBTYPE_RGB32` alongside `MEDIASUBTYPE_NV12` and `MEDIASUBTYPE_RGB24` to media type enumeration (`EnumMediaTypesImpl`), pin capability descriptors (`GetStreamCaps`, `GetNumberOfCapabilities`), connection fallback, and real-time color conversion (`Nv12ToRgb32`), enabling instant negotiation with Google Meet, Chrome, Brave, and Electron apps.
+- **Seqlock Race Condition & Memory Safety**: Eliminated in-place decoding on shared memory by snapshotting packet data into a local buffer before decoding, preventing torn frames when the producer pushes subsequent frames. Enforced buffer capacity bounds checking before writing standby frames.
+- **Duplicate "LinkCam Virtual Camera" in Zoom**: Updated `DllRegisterServer()` and `DllUnregisterServer()` to clean legacy or orphaned registrations in `HKEY_LOCAL_MACHINE`, ensuring DirectShow's merged `HKEY_CLASSES_ROOT` view enumerates only a single camera instance.
+- **Inno Setup Uninstaller Residue**: Added `[UninstallDelete]` in `desktop/installer.iss` to completely purge `{app}` installation directory and `%LOCALAPPDATA%` application cache/config folders (`LinkCam` and `com.linkcam.desktop`) upon uninstallation.
+
 ## [1.2.1] - 2026-10-21
 
 ### Fixed
