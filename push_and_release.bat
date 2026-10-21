@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 set TAG=%1
-if "%TAG%"=="" set TAG=v1.2.2
+if "%TAG%"=="" set TAG=v1.2.3
 
 echo ========================================================
 echo   LinkCam - Git Push and Release Automation (!TAG!)

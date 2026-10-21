@@ -5,6 +5,16 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2026-10-21
+
+### Fixed
+- **DirectShow State Transition & Pause Conformance (`CBaseFilter::Pause` returning `S_OK`)**: Fixed `LinkCamFilter::Pause()` which erroneously returned `VFW_S_CANT_CUE` instead of `S_OK`. Returning `VFW_S_CANT_CUE` from `Pause()` caused Zoom, Chromium (Google Meet), and DirectShow filter graph builders to abort state transitions with "Camera unavailable" or "Failed to start the video camera". Per DirectShow standards, `VFW_S_CANT_CUE` is now strictly restricted to `IMediaFilter::GetState()` when in `State_Paused`.
+- **Dynamic Multi-Resolution Stream Capabilities & Bilinear Scaling**: Expanded `LinkCamOutputPin` format descriptors from 1080p only to 18 formats covering 1080p60/30, 720p60/30, 480p30, and 360p30 across `NV12`, `RGB32`, and `RGB24`. Added `ScaleNv12` bilinear scaler and dynamic standby frame generation adapting to negotiated target dimensions (`targetWidth` x `targetHeight`), fixing format negotiation failures when conferencing software (Google Meet, Zoom) requests 720p or 360p.
+- **OBS Studio Discovery & Moniker Recognition (`DevicePath`, `IAMFilterMiscFlags`, `IPersistPropertyBag`)**: Added missing `DevicePath` (`\\?\root#media#linkcam_virtual_camera`) to the DirectShow Video Input Category registration (`{860BB310-5D01-11D0-BD3B-00A0C911CE86}\Instance\{D37E5526-92F7-4E61-A76F-B590E8F88E29}`). OBS Studio's `libdshowcapture` enumerator requires `DevicePath` to instantiate and track devices. Implemented `IAMFilterMiscFlags` (`AM_FILTER_MISC_FLAGS_IS_SOURCE = 0x1`) and `IPersistPropertyBag` on `LinkCamFilter` for DirectShow moniker and capture graph builder binding.
+- **Purged Duplicate "LinkCam Virtual Camera" Registrations**: Fixed dual virtual camera entries appearing in Google Meet, Zoom, and Windows device lists. Proactively purged orphaned and legacy subkeys (`LinkCamVirtualCamera` and `LinkCam Virtual Camera`) across both `HKEY_CURRENT_USER` and `HKEY_LOCAL_MACHINE` in `LinkCamDShow.cpp` (`DllRegisterServer`, `DllUnregisterServer`) and `mf_virtual_camera.rs` (`clean_legacy_registries`).
+- **Dynamic Allocator Re-Commit on Stream Restart**: Added `m_pAllocator->Commit()` in `LinkCamOutputPin::StartStreaming()` to guarantee sample allocator availability when webcams are stopped and re-started during meetings.
+- **Uninstaller Locked DLL & Residual Cleanup (`LinkCamDShow64.dll`)**: Resolved uninstaller error *"Some elements could not be removed. These can be removed manually"* and locked DLL file conflicts during re-installation. Replaced in-process `regserver` loading (which caused Inno Setup's `unins000.exe` to hold open DLL handles during file deletion) with out-of-process `regsvr32.exe /u /s`, added `restartreplace` and `uninsrestartdelete` flags, added pre-setup/uninstall `taskkill` and `net stop FrameServer` hooks in `[Code]` to release Windows Camera Frame Server locks, and changed directory removal to `dirifempty`.
+
 ## [1.2.2] - 2026-10-21
 
 ### Fixed
