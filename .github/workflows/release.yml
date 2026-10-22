@@ -118,16 +118,34 @@ jobs:
           npm run build
 
       - name: Build Desktop Companion (Rust / Tauri)
-        working-directory: desktop/src-tauri
+        shell: pwsh
         run: |
+          cd desktop/src-tauri
           cargo build --release --verbose
+          cd ../..
+          New-Item -ItemType Directory -Force -Path "desktop/src-tauri/target/release"
+          if (Test-Path "target/release/linkcam-desktop.exe" -and -not (Test-Path "desktop/src-tauri/target/release/linkcam-desktop.exe")) {
+            Copy-Item "target/release/linkcam-desktop.exe" "desktop/src-tauri/target/release/linkcam-desktop.exe" -Force
+            Write-Host "Staged linkcam-desktop.exe from root target directory"
+          }
 
       - name: Build Windows 11 Media Foundation Virtual Camera (Rust cdylib)
-        working-directory: desktop/vcam-mf
+        shell: pwsh
         run: |
+          cd desktop/vcam-mf
           cargo build --release --verbose
-          New-Item -ItemType Directory -Force -Path "../src-tauri/target/release"
-          Copy-Item target/release/linkcam_vcam.dll ../src-tauri/target/release/linkcam_vcam.dll -Force
+          cd ../..
+          New-Item -ItemType Directory -Force -Path "desktop/src-tauri/target/release"
+          $vcam = (Get-ChildItem -Path "desktop/vcam-mf" -Filter "linkcam_vcam.dll" -Recurse | Select-Object -First 1)?.FullName
+          if (-not $vcam) {
+            $vcam = (Get-ChildItem -Path "target" -Filter "linkcam_vcam.dll" -Recurse | Select-Object -First 1)?.FullName
+          }
+          if ($vcam) {
+            Copy-Item $vcam "desktop/src-tauri/target/release/linkcam_vcam.dll" -Force
+            Write-Host "Successfully compiled and staged linkcam_vcam.dll from $vcam"
+          } else {
+            Write-Warning "linkcam_vcam.dll was not found after build!"
+          }
 
       - name: Build DirectShow Virtual Camera Filter (64-bit DLL)
         shell: pwsh

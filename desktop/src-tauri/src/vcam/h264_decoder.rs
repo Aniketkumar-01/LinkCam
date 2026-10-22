@@ -1,5 +1,5 @@
 //! Hardware / Software MFT H.264 -> NV12 Decoder running inside LinkCam Desktop Host.
-//! Directly ported from Owlmic's verified, low-latency decoder.
+//! Centralized low-latency Media Foundation Transform decoder pipeline.
 
 use super::nv12::Nv12;
 use std::mem::ManuallyDrop;

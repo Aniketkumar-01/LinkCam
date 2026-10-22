@@ -1,5 +1,5 @@
 //! Shared memory frame ring for LinkCam Virtual Camera (Media Foundation & DirectShow).
-//! Direct port of Owlmic's proven 2-slot seqlock ring buffer.
+//! Low-latency 2-slot atomic seqlock ring buffer for tear-free frame distribution.
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 

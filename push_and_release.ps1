@@ -1,6 +1,6 @@
 param(
     [string]$Tag = "v1.2.5",
-    [string]$Message = "Release v1.2.5: Owlmic architecture integration with centralized desktop MFT decoder, 2-slot seqlock ring buffer, and Windows 11 Media Foundation virtual camera"
+    [string]$Message = "Release v1.2.5: Centralized desktop MFT H.264 decoder, 2-slot seqlock ring buffer, and native Windows 11 Media Foundation virtual camera"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan

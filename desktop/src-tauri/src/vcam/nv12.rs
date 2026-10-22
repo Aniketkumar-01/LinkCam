@@ -1,5 +1,5 @@
 //! NV12 video frame representation, scaling, framing and color conversion.
-//! Based on Owlmic's proven low-latency video pipeline.
+//! High-performance, zero-copy low-latency video pipeline for virtual camera blitting.
 
 pub const BLACK_Y: u8 = 16;
 pub const NEUTRAL_UV: u8 = 128;
