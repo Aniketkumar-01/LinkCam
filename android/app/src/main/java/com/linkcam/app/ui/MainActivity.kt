@@ -47,6 +47,9 @@ class MainActivity : ComponentActivity() {
     private val isConnectingState = mutableStateOf(false)
     private val errorMessageState = mutableStateOf<String?>(null)
     private val connectionModeState = mutableStateOf("Disconnected")
+    private val isMeetingModeState = mutableStateOf(false)
+    private val isTorchOnState = mutableStateOf(false)
+    private val currentLensState = mutableStateOf(CameraLens.REAR_WIDE)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -99,7 +102,7 @@ class MainActivity : ComponentActivity() {
                 runOnUiThread {
                     if (command.has("torch")) {
                         val torchVal = command.get("torch").asBoolean
-                        isTorchOn = torchVal
+                        isTorchOnState.value = torchVal
                         cameraStreamer?.setTorch(torchVal)
                     }
                     if (command.has("zoom")) {
@@ -118,7 +121,7 @@ class MainActivity : ComponentActivity() {
                             "REAR_TELEPHOTO", "TELEPHOTO", "REARTELEPHOTO" -> CameraLens.REAR_TELEPHOTO
                             else -> CameraLens.REAR_WIDE
                         }
-                        currentLens = newLens
+                        currentLensState.value = newLens
                         cameraStreamer?.setLens(newLens)
                     }
                     if (command.has("action")) {
@@ -138,7 +141,7 @@ class MainActivity : ComponentActivity() {
                             }
                             "SetTorch" -> {
                                 val torch = params?.get("enabled")?.asBoolean ?: false
-                                isTorchOn = torch
+                                isTorchOnState.value = torch
                                 cameraStreamer?.setTorch(torch)
                             }
                             "SetCameraLens" -> {
@@ -149,12 +152,12 @@ class MainActivity : ComponentActivity() {
                                     "RearTelephoto" -> CameraLens.REAR_TELEPHOTO
                                     else -> CameraLens.REAR_WIDE
                                 }
-                                currentLens = newLens
+                                currentLensState.value = newLens
                                 cameraStreamer?.setLens(newLens)
                             }
                             "SetMeetingMode" -> {
                                 val enabled = params?.get("enabled")?.asBoolean ?: false
-                                isMeetingMode = enabled
+                                isMeetingModeState.value = enabled
                                 cameraStreamer?.setMeetingModeActive(enabled)
                             }
                         }
@@ -176,9 +179,9 @@ class MainActivity : ComponentActivity() {
                     val errorMessage by remember { errorMessageState }
                     val connectionMode by remember { connectionModeState }
 
-                    var isMeetingMode by remember { mutableStateOf(false) }
-                    var isTorchOn by remember { mutableStateOf(false) }
-                    var currentLens by remember { mutableStateOf(CameraLens.REAR_WIDE) }
+                    val isMeetingMode by remember { isMeetingModeState }
+                    val isTorchOn by remember { isTorchOnState }
+                    val currentLens by remember { currentLensState }
                     val batteryPct = remember { getRealBatteryPct() }
 
                     if (!isConnected) {
@@ -197,7 +200,7 @@ class MainActivity : ComponentActivity() {
                     } else if (isMeetingMode) {
                         MeetingModeOverlay(
                             onExitMeetingMode = {
-                                isMeetingMode = false
+                                isMeetingModeState.value = false
                                 cameraStreamer?.setMeetingModeActive(false)
                             },
                             fps = 60.0f,
@@ -214,16 +217,18 @@ class MainActivity : ComponentActivity() {
                             currentLens = currentLens,
                             isTorchOn = isTorchOn,
                             onToggleTorch = {
-                                isTorchOn = !isTorchOn
-                                cameraStreamer?.setTorch(isTorchOn)
+                                val nextTorch = !isTorchOnState.value
+                                isTorchOnState.value = nextTorch
+                                cameraStreamer?.setTorch(nextTorch)
                             },
                             onFlipCamera = {
-                                currentLens = if (currentLens == CameraLens.REAR_WIDE) {
+                                val nextLens = if (currentLensState.value == CameraLens.REAR_WIDE) {
                                     CameraLens.FRONT
                                 } else {
                                     CameraLens.REAR_WIDE
                                 }
-                                cameraStreamer?.setLens(currentLens)
+                                currentLensState.value = nextLens
+                                cameraStreamer?.setLens(nextLens)
                             },
                             onTriggerDocumentScan = {
                                 val gmsAvailable = DocumentScanner.isGooglePlayServicesAvailable(this@MainActivity)
@@ -261,7 +266,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onEnterMeetingMode = {
-                                isMeetingMode = true
+                                isMeetingModeState.value = true
                                 cameraStreamer?.setMeetingModeActive(true)
                             },
                             onDisconnect = {

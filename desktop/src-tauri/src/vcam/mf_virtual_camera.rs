@@ -1,4 +1,4 @@
-use super::frame_sink::{VirtualCameraSink, SHM_EVENT_NAME, SHM_NAME};
+use super::frame_sink::VirtualCameraSink;
 use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;

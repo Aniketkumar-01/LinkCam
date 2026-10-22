@@ -113,10 +113,10 @@ impl NetworkServer {
 
     async fn handle_raw_tcp(
         &self,
-        mut stream: TcpStream,
+        stream: TcpStream,
         peer_addr: SocketAddr,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let (mut reader, mut writer) = stream.split();
+        let (mut reader, mut writer) = stream.into_split();
         let mut header_buf = [0u8; HEADER_SIZE];
 
         // Read handshake packet
