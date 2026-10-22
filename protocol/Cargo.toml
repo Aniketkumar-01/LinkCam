@@ -1,6 +1,6 @@
 [package]
 name = "linkcam-protocol"
-version = "1.2.4"
+version = "1.2.5"
 edition = "2021"
 description = "Core binary wire protocol, packet serialization, and control RPC for LinkCam"
 
