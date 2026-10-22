@@ -303,85 +303,47 @@ impl NetworkServer {
         ws: tokio_tungstenite::WebSocketStream<TcpStream>,
         peer_addr: SocketAddr,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let (mut ws_sender, mut ws_receiver) = ws.split();
-
-        if peer_addr.ip().is_loopback() {
-            let mut video_rx = self.video_frame_tx.subscribe();
-            let send_task = tokio::spawn(async move {
-                loop {
-                    match video_rx.recv().await {
-                        Ok(packet) => {
-                            if let Ok(bytes) = packet.to_bytes() {
-                                if ws_sender.send(Message::Binary(bytes)).await.is_err() {
-                                    break;
-                                }
-                            }
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                            eprintln!("[LinkCam WebSocket] Loopback video stream lagged by {} frames; resuming", skipped);
-                            continue;
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                            break;
-                        }
-                    }
-                }
-            });
-
-            while let Some(msg_res) = ws_receiver.next().await {
-                if let Ok(msg) = msg_res {
-                    if msg.is_close() {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-            send_task.abort();
+        // Security Hardening: WebSocket endpoints are strictly reserved for local frontend UI preview.
+        // Remote streaming from phones must use authenticated raw TCP protocol with PairingAuth tokens.
+        if !peer_addr.ip().is_loopback() {
+            eprintln!("[LinkCam Security] Dropped unauthorized non-loopback WebSocket attempt from {}", peer_addr);
             return Ok(());
         }
 
-        while let Some(msg_res) = ws_receiver.next().await {
-            let msg = match msg_res {
-                Ok(m) => m,
-                Err(_) => break,
-            };
+        let (mut ws_sender, mut ws_receiver) = ws.split();
 
-            if let Message::Binary(bin) = msg {
-                if let Ok(packet) = Packet::from_bytes(&bin) {
-                    match packet.header.packet_type {
-                        PacketType::KeepAlivePing => {
-                            let pong = Packet::new(
-                                PacketHeader::new(PacketType::KeepAlivePing, packet.header.sequence, packet.header.timestamp, 0),
-                                Vec::new(),
-                            );
-                            if let Ok(bytes) = pong.to_bytes() {
-                                let _ = ws_sender.send(Message::Binary(bytes)).await;
+        let mut video_rx = self.video_frame_tx.subscribe();
+        let send_task = tokio::spawn(async move {
+            loop {
+                match video_rx.recv().await {
+                    Ok(packet) => {
+                        if let Ok(bytes) = packet.to_bytes() {
+                            if ws_sender.send(Message::Binary(bytes)).await.is_err() {
+                                break;
                             }
                         }
-                        PacketType::Disconnect => {
-                            break;
-                        }
-                        PacketType::VideoFrame => {
-                            let _ = self.video_frame_tx.send(packet);
-                        }
-                        PacketType::InstantCaptureChunk => {
-                            let _ = self.capture_chunk_tx.send(packet).await;
-                        }
-                        PacketType::TelemetryHeartbeat => {
-                            if let Ok(hb) = serde_json::from_slice::<TelemetryHeartbeat>(&packet.payload) {
-                                let mut sess = self.session.write().await;
-                                if let Some(s) = sess.as_mut() {
-                                    s.update_telemetry(hb);
-                                }
-                            }
-                        }
-                        _ => {}
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        eprintln!("[LinkCam WebSocket] Loopback video stream lagged by {} frames; resuming", skipped);
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        break;
                     }
                 }
             }
-        }
+        });
 
+        while let Some(msg_res) = ws_receiver.next().await {
+            if let Ok(msg) = msg_res {
+                if msg.is_close() {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        send_task.abort();
         Ok(())
     }
 }

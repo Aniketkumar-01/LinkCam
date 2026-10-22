@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "protocol",
+    "desktop/src-tauri",
+    "desktop/vcam-mf",
+]
+resolver = "2"

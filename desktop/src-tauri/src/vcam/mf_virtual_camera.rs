@@ -20,6 +20,7 @@ pub struct VirtualCameraDevice {
     sink: Arc<VirtualCameraSink>,
     registered: bool,
     filter_dll_path: Option<PathBuf>,
+    mf_dll_path: Option<PathBuf>,
     #[cfg(target_os = "windows")]
     mf_vcam_ptr: Option<usize>,
 }
@@ -30,17 +31,55 @@ impl VirtualCameraDevice {
     pub const CLSID_VIDEO_INPUT_CATEGORY: &'static str = "{860BB310-5D01-11D0-BD3B-00A0C911CE86}";
     /// Canonical LinkCam DirectShow Filter CLSID
     pub const CLSID_LINKCAM_DSHOW_FILTER: &'static str = "{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
+    /// Canonical LinkCam Media Foundation Virtual Camera Media Source COM CLSID
+    pub const CLSID_LINKCAM_MF_VCAM: &'static str = "{C823B5A1-3E2A-4F75-9C47-D572B28B4592}";
 
     pub fn new(sink: Arc<VirtualCameraSink>) -> Self {
         let filter_dll_path = Self::find_directshow_dll();
+        let mf_dll_path = Self::find_mf_dll();
         Self {
             name: Self::DEFAULT_CAMERA_NAME.to_string(),
             sink,
             registered: false,
             filter_dll_path,
+            mf_dll_path,
             #[cfg(target_os = "windows")]
             mf_vcam_ptr: None,
         }
+    }
+
+    fn find_mf_dll() -> Option<PathBuf> {
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
+        let mut candidates = Vec::new();
+
+        if let Some(ref dir) = exe_dir {
+            candidates.push(dir.join("linkcam_vcam.dll"));
+            candidates.push(dir.join(r"vcam-mf\target\release\linkcam_vcam.dll"));
+            candidates.push(dir.join(r"..\vcam-mf\target\release\linkcam_vcam.dll"));
+        }
+
+        if let Ok(cwd) = std::env::current_dir() {
+            candidates.push(cwd.join("linkcam_vcam.dll"));
+            candidates.push(cwd.join(r"desktop\vcam-mf\target\release\linkcam_vcam.dll"));
+            candidates.push(cwd.join(r"vcam-mf\target\release\linkcam_vcam.dll"));
+            candidates.push(cwd.join(r"..\vcam-mf\target\release\linkcam_vcam.dll"));
+        }
+
+        candidates.push(PathBuf::from(r"d:\AG\LinkCam\desktop\vcam-mf\target\release\linkcam_vcam.dll"));
+        candidates.push(PathBuf::from(r"D:\Programs\LinkCam\linkcam_vcam.dll"));
+        candidates.push(PathBuf::from(r"C:\Program Files\LinkCam\linkcam_vcam.dll"));
+
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            candidates.push(PathBuf::from(local_app_data).join(r"Programs\LinkCam\linkcam_vcam.dll"));
+        }
+        if let Ok(prog_files) = std::env::var("ProgramFiles") {
+            candidates.push(PathBuf::from(prog_files).join(r"LinkCam\linkcam_vcam.dll"));
+        }
+
+        candidates.into_iter().find(|p| p.exists())
     }
 
     fn find_directshow_dll() -> Option<PathBuf> {
@@ -182,7 +221,10 @@ impl VirtualCameraDevice {
             Self::ensure_device_path(self.filter_dll_path.as_ref());
 
             // 2. Windows 11 Media Foundation Virtual Camera API registration & activation
-            self.mf_vcam_ptr = Self::try_register_windows11_mf(&self.name, Self::CLSID_LINKCAM_DSHOW_FILTER);
+            if self.mf_dll_path.is_none() {
+                self.mf_dll_path = Self::find_mf_dll();
+            }
+            self.mf_vcam_ptr = Self::try_register_windows11_mf(&self.name, self.mf_dll_path.as_ref());
             if self.mf_vcam_ptr.is_some() {
                 println!("[LinkCam] Windows 11 Media Foundation Virtual Camera registration active and started.");
             } else {
@@ -195,9 +237,24 @@ impl VirtualCameraDevice {
     }
 
     #[cfg(target_os = "windows")]
-    fn try_register_windows11_mf(friendly_name: &str, clsid_str: &str) -> Option<usize> {
+    fn try_register_windows11_mf(friendly_name: &str, mf_dll: Option<&PathBuf>) -> Option<usize> {
         use windows::core::w;
         use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+
+        // If linkcam_vcam.dll exists, register its COM InprocServer32 class under HKLM/HKCU
+        if let Some(dll) = mf_dll {
+            let clsid_key = format!(r"HKLM\Software\Classes\CLSID\{}", Self::CLSID_LINKCAM_MF_VCAM);
+            let _ = std::process::Command::new("reg.exe")
+                .args(&["add", &clsid_key, "/ve", "/t", "REG_SZ", "/d", friendly_name, "/f"])
+                .output();
+            let inproc_key = format!(r"{}\InprocServer32", clsid_key);
+            let _ = std::process::Command::new("reg.exe")
+                .args(&["add", &inproc_key, "/ve", "/t", "REG_SZ", "/d", &dll.to_string_lossy(), "/f"])
+                .output();
+            let _ = std::process::Command::new("reg.exe")
+                .args(&["add", &inproc_key, "/v", "ThreadingModel", "/t", "REG_SZ", "/d", "Both", "/f"])
+                .output();
+        }
 
         type FnMFCreateVirtualCamera = unsafe extern "system" fn(
             camera_type: u32,
@@ -223,19 +280,37 @@ impl VirtualCameraDevice {
             };
 
             let name_wide: Vec<u16> = friendly_name.encode_utf16().chain(std::iter::once(0)).collect();
-            let id_wide: Vec<u16> = clsid_str.encode_utf16().chain(std::iter::once(0)).collect();
+            let id_wide: Vec<u16> = Self::CLSID_LINKCAM_MF_VCAM.encode_utf16().chain(std::iter::once(0)).collect();
 
             let mut vcam_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
             let hr = mf_create(
                 0, // MFVirtualCameraType_SoftwareCameraSource
-                0, // MFVirtualCameraLifetime_Session
-                0, // MFVirtualCameraAccess_CurrentUser
+                1, // MFVirtualCameraLifetime_System
+                1, // MFVirtualCameraAccess_AllUsers
                 name_wide.as_ptr(),
                 id_wide.as_ptr(),
                 std::ptr::null(),
                 0,
                 &mut vcam_ptr,
             );
+
+            // If system/all-users failed (non-elevated), fallback to current user session
+            let (hr, vcam_ptr) = if hr.is_err() || vcam_ptr.is_null() {
+                let mut fallback_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+                let f_hr = mf_create(
+                    0, // MFVirtualCameraType_SoftwareCameraSource
+                    0, // MFVirtualCameraLifetime_Session
+                    0, // MFVirtualCameraAccess_CurrentUser
+                    name_wide.as_ptr(),
+                    id_wide.as_ptr(),
+                    std::ptr::null(),
+                    0,
+                    &mut fallback_ptr,
+                );
+                (f_hr, fallback_ptr)
+            } else {
+                (hr, vcam_ptr)
+            };
 
             if hr.is_ok() && !vcam_ptr.is_null() {
                 // Call IMFVirtualCamera::Start(nullptr) via COM vtable (method slot 37)
@@ -244,7 +319,7 @@ impl VirtualCameraDevice {
                     std::mem::transmute(*vtable.add(37));
                 let start_hr = start_fn(vcam_ptr, std::ptr::null_mut());
                 if start_hr.is_ok() {
-                    println!("[LinkCam] Windows 11 user-mode Virtual Camera successfully created and STARTED via MFCreateVirtualCamera!");
+                    println!("[LinkCam] Windows 11 Media Foundation Virtual Camera active and STARTED via MFCreateVirtualCamera!");
                 } else {
                     println!("[LinkCam] Windows 11 Virtual Camera created, Start returned: {:?}", start_hr);
                 }

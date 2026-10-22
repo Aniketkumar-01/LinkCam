@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 set TAG=%1
-if "%TAG%"=="" set TAG=v1.2.4
+if "%TAG%"=="" set TAG=v1.2.5
 
 echo ========================================================
 echo   LinkCam - Git Push and Release Automation (!TAG!)
@@ -33,7 +33,7 @@ git add .
 
 REM 5. Commit changes
 echo [*] Committing changes...
-git commit -m "release: !TAG! - Universal Virtual Camera Compatibility & Discrete Controls" 2>nul || echo [*] Working tree clean.
+git commit -m "release: !TAG! - Centralized desktop MFT decoder, 2-slot seqlock ring buffer, and Windows 11 Media Foundation virtual camera" 2>nul || echo [*] Working tree clean.
 
 REM 6. Push to main branch
 echo [*] Pushing to GitHub (main)...

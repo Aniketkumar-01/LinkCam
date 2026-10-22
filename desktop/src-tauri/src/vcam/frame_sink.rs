@@ -75,18 +75,45 @@ pub struct VirtualCameraSink {
     frames_processed: AtomicU64,
     latest_frame: Arc<RwLock<Option<VideoFrameInfo>>>,
     #[cfg(target_os = "windows")]
+    decoder: std::sync::Mutex<Option<super::h264_decoder::H264Decoder>>,
+    #[cfg(target_os = "windows")]
+    shaped_frame: std::sync::Mutex<super::nv12::Nv12>,
+    #[cfg(target_os = "windows")]
+    global_ring: Option<super::shared::Mapping>,
+    #[cfg(target_os = "windows")]
     win_shm: Option<WinShmState>,
 }
 
 impl VirtualCameraSink {
     pub fn new() -> Self {
         #[cfg(target_os = "windows")]
+        let global_ring = super::shared::Mapping::create();
+
+        #[cfg(target_os = "windows")]
         let win_shm = Self::init_windows_shm();
+
+        #[cfg(target_os = "windows")]
+        let decoder = match super::h264_decoder::H264Decoder::new() {
+            Ok(d) => {
+                println!("[LinkCam] Low-latency MFT H.264 -> NV12 decoder initialized in host process.");
+                Some(d)
+            }
+            Err(e) => {
+                eprintln!("[LinkCam] Warning: Failed to init MFT H.264 decoder: {:?}", e);
+                None
+            }
+        };
 
         Self {
             is_active: AtomicBool::new(true),
             frames_processed: AtomicU64::new(0),
             latest_frame: Arc::new(RwLock::new(None)),
+            #[cfg(target_os = "windows")]
+            decoder: std::sync::Mutex::new(decoder),
+            #[cfg(target_os = "windows")]
+            shaped_frame: std::sync::Mutex::new(super::nv12::Nv12::black(1920, 1080)),
+            #[cfg(target_os = "windows")]
+            global_ring,
             #[cfg(target_os = "windows")]
             win_shm,
         }
@@ -232,47 +259,72 @@ impl VirtualCameraSink {
             return;
         }
 
-        let payload_len = packet.payload.len();
+        #[cfg(target_os = "windows")]
+        let mut decoded_nv12: Option<Vec<u8>> = None;
 
         #[cfg(target_os = "windows")]
-        if let Some(shm) = &self.win_shm {
-            if !shm.mapped_ptr.is_null() {
-                let max_payload = SHM_CAPACITY_BYTES - SHM_HEADER_SIZE;
-                let copy_len = payload_len.min(max_payload);
+        {
+            let mut dec_guard = self.decoder.lock().unwrap();
+            if let Some(dec) = dec_guard.as_mut() {
+                match dec.decode(&packet.payload) {
+                    Ok(Some(picture)) => {
+                        let now_ms = unsafe { windows::Win32::System::SystemInformation::GetTickCount64() };
+                        let mut shaped = self.shaped_frame.lock().unwrap();
+                        let final_bytes = if picture.width == 1920 && picture.height == 1080 {
+                            &picture.data
+                        } else {
+                            picture.shape_into(&mut shaped, super::nv12::Framing::Fit, false);
+                            &shaped.data
+                        };
 
-                let base_seq = packet.header.sequence.max(1) * 2;
-                let header = ShmVideoHeader {
-                    magic: SHM_MAGIC,
-                    version: SHM_VERSION,
-                    width: 1920,
-                    height: 1080,
-                    format: 0, // H264
-                    sequence: base_seq - 1, // Odd = write in progress (seqlock guard)
-                    timestamp_us: packet.header.timestamp,
-                    payload_size: copy_len as u32,
-                    is_keyframe: if packet.header.is_keyframe() { 1 } else { 0 },
-                    reserved: [0; 6],
-                };
+                        // 1. Windows 11 Media Foundation Virtual Camera Ring buffer
+                        if let Some(global_mapping) = &self.global_ring {
+                            global_mapping.ring.write(final_bytes, now_ms);
+                        }
 
-                unsafe {
-                    let _ = windows::Win32::System::Threading::ResetEvent(shm.event_handle);
-                    // Write header with odd sequence
-                    std::ptr::copy_nonoverlapping(
-                        &header as *const _ as *const u8,
-                        shm.mapped_ptr,
-                        SHM_HEADER_SIZE,
-                    );
-                    // Copy payload
-                    std::ptr::copy_nonoverlapping(
-                        packet.payload.as_ptr(),
-                        shm.mapped_ptr.add(SHM_HEADER_SIZE),
-                        copy_len,
-                    );
-                    // Commit sequence = base_seq (even = write complete)
-                    let seq_ptr = shm.mapped_ptr.add(20) as *mut u32;
-                    std::ptr::write_volatile(seq_ptr, base_seq);
+                        // 2. Windows DirectShow Virtual Camera Shared Memory (Pre-decoded NV12, format = 1)
+                        if let Some(shm) = &self.win_shm {
+                            if !shm.mapped_ptr.is_null() {
+                                let max_payload = SHM_CAPACITY_BYTES - SHM_HEADER_SIZE;
+                                let copy_len = final_bytes.len().min(max_payload);
+                                let base_seq = packet.header.sequence.max(1) * 2;
+                                let header = ShmVideoHeader {
+                                    magic: SHM_MAGIC,
+                                    version: SHM_VERSION,
+                                    width: 1920,
+                                    height: 1080,
+                                    format: 1, // Pre-decoded NV12 format for zero-decode DirectShow blitting
+                                    sequence: base_seq - 1, // Odd = write in progress
+                                    timestamp_us: packet.header.timestamp,
+                                    payload_size: copy_len as u32,
+                                    is_keyframe: if packet.header.is_keyframe() { 1 } else { 0 },
+                                    reserved: [0; 6],
+                                };
 
-                    let _ = windows::Win32::System::Threading::SetEvent(shm.event_handle);
+                                unsafe {
+                                    let _ = windows::Win32::System::Threading::ResetEvent(shm.event_handle);
+                                    std::ptr::copy_nonoverlapping(
+                                        &header as *const _ as *const u8,
+                                        shm.mapped_ptr,
+                                        SHM_HEADER_SIZE,
+                                    );
+                                    std::ptr::copy_nonoverlapping(
+                                        final_bytes.as_ptr(),
+                                        shm.mapped_ptr.add(SHM_HEADER_SIZE),
+                                        copy_len,
+                                    );
+                                    let seq_ptr = shm.mapped_ptr.add(20) as *mut u32;
+                                    std::ptr::write_volatile(seq_ptr, base_seq);
+                                    let _ = windows::Win32::System::Threading::SetEvent(shm.event_handle);
+                                }
+                            }
+                        }
+                        decoded_nv12 = Some(final_bytes.clone());
+                    }
+                    Ok(None) => {}
+                    Err(_) => {
+                        dec.flush();
+                    }
                 }
             }
         }
@@ -283,7 +335,7 @@ impl VirtualCameraSink {
             timestamp_us: packet.header.timestamp,
             sequence: packet.header.sequence,
             is_keyframe: packet.header.is_keyframe(),
-            data: packet.payload,
+            data: decoded_nv12.unwrap_or(packet.payload),
         };
 
         {

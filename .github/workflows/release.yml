@@ -122,6 +122,13 @@ jobs:
         run: |
           cargo build --release --verbose
 
+      - name: Build Windows 11 Media Foundation Virtual Camera (Rust cdylib)
+        working-directory: desktop/vcam-mf
+        run: |
+          cargo build --release --verbose
+          New-Item -ItemType Directory -Force -Path "../src-tauri/target/release"
+          Copy-Item target/release/linkcam_vcam.dll ../src-tauri/target/release/linkcam_vcam.dll -Force
+
       - name: Build DirectShow Virtual Camera Filter (64-bit DLL)
         shell: pwsh
         run: |

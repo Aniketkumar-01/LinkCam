@@ -192,7 +192,6 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
 
         dec.configure(chosenConfig);
         decoderRef.current = dec;
-        console.log('[LinkCam WebCodecs] Decoder configured with Annex B:', chosenConfig);
       } catch (e) {
         console.warn('[LinkCam] WebCodecs initialization failed:', e);
         setStatusMessage('Hardware video decoder initialization failed');
@@ -211,7 +210,6 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
         wsRef.current = ws;
 
         ws.onopen = () => {
-          console.log(`[LinkCam UI] Live preview WebSocket stream connected to ${wsUrl}`);
           setStatusMessage('Waiting for camera keyframe...');
         };
 

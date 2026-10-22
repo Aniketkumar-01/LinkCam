@@ -5,6 +5,18 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2026-10-22
+
+### Added
+- **Centralized Desktop Host MFT H.264 -> NV12 Decoder**: Ported Owlmic's verified Media Foundation MFT video decoder (`h264_decoder.rs`) in low-latency mode (`MF_LOW_LATENCY=1`) directly into the LinkCam desktop companion process (`desktop/src-tauri`). Decodes incoming H.264 network packets into uncompressed, full-quality 1080p NV12 frames before publishing to shared memory, eliminating fragile in-process decoding inside client video apps.
+- **2-Slot Atomic Seqlock Shared Memory Ring Buffer (`Global\LinkCamCamFrames`)**: Implemented Owlmic's tear-free 2-slot seqlock ring buffer (`shared.rs`) with SDDL permissions allowing System, Services, and All Users to access frames with zero lock contention.
+- **Pure Rust Windows 11 Media Foundation Virtual Camera (`desktop/vcam-mf` -> `linkcam_vcam.dll`)**: Ported Owlmic's Media Foundation Media Source architecture implementing `IClassFactory`, `IMFActivate`, `IMFMediaSourceEx`, and `IMFMediaStream2`. Windows Camera Frame Server loads `linkcam_vcam.dll` and feeds monotonic timestamps, duration, clean points (`MFSampleExtension_CleanPoint`), and reference time to modern Windows 11 apps (WhatsApp, Windows Camera, Chrome WebRTC, Edge).
+- **Virtual Audio Device Configuration (`setup-audio-device.ps1`)**: Added automated virtual audio setup script configuring high-fidelity audio cable endpoints branded as **"LinkCam Mic"** (Recording endpoint for conferencing apps) and **"LinkCam Bridge"** (Playback endpoint fed via WASAPI).
+
+### Fixed
+- **DirectShow In-Client Codec Stalls & Multi-App Freezing**: Updated DirectShow virtual camera filter (`LinkCamDShow64.dll`) to receive pre-decoded NV12 frames (`format: 1`) directly from shared memory. Completely bypasses in-process MFT decoder initialization inside client processes, preventing black screens in Zoom, Google Meet, Teams, and OBS Studio.
+- **Automated Disconnect & Standby Fallback**: Added a 2,000 ms staleness guard in both DirectShow and Media Foundation drivers, automatically displaying a clean standby placeholder ("LinkCam · Connect phone in LinkCam app") whenever the phone stream is disconnected or idle.
+
 ## [1.2.4] - 2026-10-22
 
 ### Added

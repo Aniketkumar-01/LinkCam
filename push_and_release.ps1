@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.2.4",
-    [string]$Message = "Release v1.2.4: Discrete camera controls, 48kHz audio streaming with VU telemetry, and Windows 11 Media Foundation virtual camera"
+    [string]$Tag = "v1.2.5",
+    [string]$Message = "Release v1.2.5: Owlmic architecture integration with centralized desktop MFT decoder, 2-slot seqlock ring buffer, and Windows 11 Media Foundation virtual camera"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -27,11 +27,11 @@ Write-Host "[*] Staging files..." -ForegroundColor Yellow
 git add .
 
 Write-Host "[*] Committing $Tag release..." -ForegroundColor Yellow
-git commit -m "release: $Tag - Fix QR camera crash, thread-safe transport, and enhanced USB manual pairing UX" 2>$null
+git commit -m "release: $Tag - Centralized desktop MFT decoder, 2-slot seqlock ring buffer, and Windows 11 Media Foundation virtual camera" 2>$null
 
 # 4. Push main
 Write-Host "[*] Pushing to GitHub (main)..." -ForegroundColor Yellow
-git push -u origin main --force
+git push -u origin main
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[!] Push failed. Please check your GitHub credentials." -ForegroundColor Red

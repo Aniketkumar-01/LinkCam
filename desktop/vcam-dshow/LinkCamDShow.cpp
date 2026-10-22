@@ -1280,6 +1280,7 @@ DWORD WINAPI LinkCamOutputPin::ThreadProc(LPVOID lpParam) {
     std::vector<uint8_t> cachedNv12;
     int cachedW = 1920, cachedH = 1080;
     uint32_t frameCount = 0;
+    DWORD lastFrameTick = 0;
 
     while (pin->m_bRunning) {
         DWORD loopStartTick = GetTickCount();
@@ -1342,6 +1343,7 @@ DWORD WINAPI LinkCamOutputPin::ThreadProc(LPVOID lpParam) {
                                 cachedH = srcH;
                             }
                             cachedNv12 = decodedNv12;
+                            lastFrameTick = GetTickCount();
                         } else if (decoder.DrainOutput(decodedNv12)) {
                             if (decoder.GetWidth() > 0 && decoder.GetHeight() > 0) {
                                 cachedW = (int)decoder.GetWidth();
@@ -1351,14 +1353,21 @@ DWORD WINAPI LinkCamOutputPin::ThreadProc(LPVOID lpParam) {
                                 cachedH = srcH;
                             }
                             cachedNv12 = decodedNv12;
+                            lastFrameTick = GetTickCount();
                         }
-                    } else if (hdr->format == 1) { // NV12
+                    } else if (hdr->format == 1) { // Pre-decoded NV12 (zero-decode path)
                         cachedW = srcW;
                         cachedH = srcH;
                         cachedNv12 = localPayload;
+                        lastFrameTick = GetTickCount();
                     }
                 }
             }
+        }
+
+        // Revert to clean standby placeholder if no picture has arrived for 2 seconds (phone went idle / disconnected)
+        if (lastFrameTick != 0 && (GetTickCount() - lastFrameTick) > 2000) {
+            cachedNv12.clear();
         }
 
         // Output cached phone video if available, else render standby screen

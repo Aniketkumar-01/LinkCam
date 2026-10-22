@@ -80,3 +80,10 @@ cd android
 - **Windows Virtual Camera**: Appears in Zoom, Microsoft Teams, Google Meet, and OBS as `"LinkCam Virtual Camera"`.
 - **Instant Capture**: Auto-crops documents, straightens perspective, compiles to clean PDF, and delivers straight into the Windows clipboard ready for `Ctrl+V`.
 - **OLED Meeting Mode**: Dims/blanks the phone display during long meetings to prevent thermal throttling and save battery while streaming in the background.
+
+---
+
+## Privacy & Security
+- [Privacy Policy](file:///d:/AG/LinkCam/PRIVACY.md): 100% peer-to-peer, local hardware and network processing with zero cloud data transmission.
+- [Security Policy](file:///d:/AG/LinkCam/SECURITY.md): Vulnerability reporting guidelines and advisory channel.
+

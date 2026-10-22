@@ -1,6 +1,6 @@
 ; Inno Setup Script for LinkCam Windows Companion
 #define MyAppName "LinkCam"
-#define MyAppVersion "1.2.4"
+#define MyAppVersion "1.2.5"
 #define MyAppPublisher "LinkCam Team"
 #define MyAppURL "https://github.com/Aniketkumar-01/LinkCam"
 #define MyAppExeName "linkcam-desktop.exe"
@@ -36,6 +36,8 @@ Name: "startupicon"; Description: "Launch LinkCam automatically on Windows start
 [Files]
 Source: "src-tauri\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion restartreplace
 Source: "src-tauri\target\release\LinkCamDShow64.dll"; DestDir: "{app}"; Flags: ignoreversion restartreplace uninsrestartdelete
+Source: "src-tauri\target\release\linkcam_vcam.dll"; DestDir: "{app}"; Flags: ignoreversion restartreplace uninsrestartdelete skipifsourcedoesntexist
+Source: "setup-audio-device.ps1"; DestDir: "{app}"; Flags: ignoreversion restartreplace skipifsourcedoesntexist
 Source: "dist\*"; DestDir: "{app}\dist"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
@@ -44,12 +46,14 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startupicon
 
 [Run]
-Filename: "regsvr32.exe"; Parameters: "/s ""{app}\LinkCamDShow64.dll"""; StatusMsg: "Registering Virtual Camera Filter..."; Flags: runhidden
+Filename: "regsvr32.exe"; Parameters: "/s ""{app}\LinkCamDShow64.dll"""; StatusMsg: "Registering DirectShow Virtual Camera Filter..."; Flags: runhidden
+Filename: "regsvr32.exe"; Parameters: "/s ""{app}\linkcam_vcam.dll"""; StatusMsg: "Registering Media Foundation Virtual Camera..."; Flags: runhidden skipifdoesntexist
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 Filename: "taskkill.exe"; Parameters: "/f /im {#MyAppExeName}"; Flags: runhidden; RunOnceId: "KillApp"
-Filename: "regsvr32.exe"; Parameters: "/u /s ""{app}\LinkCamDShow64.dll"""; StatusMsg: "Unregistering Virtual Camera Filter..."; Flags: runhidden; RunOnceId: "UnregFilter"
+Filename: "regsvr32.exe"; Parameters: "/u /s ""{app}\linkcam_vcam.dll"""; StatusMsg: "Unregistering Media Foundation Virtual Camera..."; Flags: runhidden skipifdoesntexist; RunOnceId: "UnregMfCamera"
+Filename: "regsvr32.exe"; Parameters: "/u /s ""{app}\LinkCamDShow64.dll"""; StatusMsg: "Unregistering DirectShow Virtual Camera Filter..."; Flags: runhidden; RunOnceId: "UnregFilter"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\LinkCam"

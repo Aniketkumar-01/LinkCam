@@ -47,5 +47,6 @@ Thumbs.db
 
 check_ci.*
 *.cjs.tmp
-desktop/fetch-ci.cjs
 .gitmessage
+owlmic-main/
+

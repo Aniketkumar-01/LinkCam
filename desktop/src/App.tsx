@@ -169,19 +169,15 @@ export const App: React.FC = () => {
     navigator.clipboard.writeText(path);
   };
 
-  const handleOpenFolder = (path: string) => {
-    console.log('Opening folder for:', path);
-  };
+  const handleOpenFolder = (_path: string) => {};
 
-  const handleAcceptPairing = (req: PendingPairingRequest, trust: boolean) => {
-    console.log('Pairing accepted for', req.deviceName, 'trusted:', trust);
+  const handleAcceptPairing = (_req: PendingPairingRequest, _trust: boolean) => {
     setPendingPairing(null);
     setIsConnected(true);
     setActiveTab('studio');
   };
 
-  const handleDeclinePairing = (req: PendingPairingRequest) => {
-    console.log('Pairing declined for', req.deviceName);
+  const handleDeclinePairing = (_req: PendingPairingRequest) => {
     setPendingPairing(null);
     setIsConnected(false);
   };
