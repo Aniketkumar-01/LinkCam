@@ -104,7 +104,7 @@ dependencies {
     // Networking (OkHttp WebSockets + Coroutines)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("com.google.code.gson:gson:2.10.1")
+    implementation("com.google.code.gson:gson:2.14.0")
 
     // QR Code Scanning (ML Kit Barcode Scanning + Offline Standalone ZXing)
     implementation("com.google.mlkit:barcode-scanning:17.2.0")
