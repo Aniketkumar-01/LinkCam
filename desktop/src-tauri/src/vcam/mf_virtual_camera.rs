@@ -21,7 +21,7 @@ pub struct VirtualCameraDevice {
     registered: bool,
     filter_dll_path: Option<PathBuf>,
     #[cfg(target_os = "windows")]
-    mf_vcam: Option<windows::Win32::Media::MediaFoundation::IMFVirtualCamera>,
+    mf_vcam_ptr: Option<usize>,
 }
 
 impl VirtualCameraDevice {
@@ -39,7 +39,7 @@ impl VirtualCameraDevice {
             registered: false,
             filter_dll_path,
             #[cfg(target_os = "windows")]
-            mf_vcam: None,
+            mf_vcam_ptr: None,
         }
     }
 
@@ -182,8 +182,8 @@ impl VirtualCameraDevice {
             Self::ensure_device_path(self.filter_dll_path.as_ref());
 
             // 2. Windows 11 Media Foundation Virtual Camera API registration & activation
-            self.mf_vcam = Self::try_register_windows11_mf(&self.name, Self::CLSID_LINKCAM_DSHOW_FILTER);
-            if self.mf_vcam.is_some() {
+            self.mf_vcam_ptr = Self::try_register_windows11_mf(&self.name, Self::CLSID_LINKCAM_DSHOW_FILTER);
+            if self.mf_vcam_ptr.is_some() {
                 println!("[LinkCam] Windows 11 Media Foundation Virtual Camera registration active and started.");
             } else {
                 println!("[LinkCam] Media Foundation Virtual Camera fallback: DirectShow COM filter is active as primary virtual camera path.");
@@ -195,10 +195,9 @@ impl VirtualCameraDevice {
     }
 
     #[cfg(target_os = "windows")]
-    fn try_register_windows11_mf(friendly_name: &str, clsid_str: &str) -> Option<windows::Win32::Media::MediaFoundation::IMFVirtualCamera> {
+    fn try_register_windows11_mf(friendly_name: &str, clsid_str: &str) -> Option<usize> {
         use windows::core::w;
         use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-        use windows::Win32::Media::MediaFoundation::IMFVirtualCamera;
 
         type FnMFCreateVirtualCamera = unsafe extern "system" fn(
             camera_type: u32,
@@ -239,14 +238,17 @@ impl VirtualCameraDevice {
             );
 
             if hr.is_ok() && !vcam_ptr.is_null() {
-                let vcam: IMFVirtualCamera = std::mem::transmute(vcam_ptr);
-                let start_res = vcam.Start(None);
-                if start_res.is_ok() {
+                // Call IMFVirtualCamera::Start(nullptr) via COM vtable (method slot 37)
+                let vtable = *(vcam_ptr as *mut *mut usize);
+                let start_fn: unsafe extern "system" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> windows::core::HRESULT =
+                    std::mem::transmute(*vtable.add(37));
+                let start_hr = start_fn(vcam_ptr, std::ptr::null_mut());
+                if start_hr.is_ok() {
                     println!("[LinkCam] Windows 11 user-mode Virtual Camera successfully created and STARTED via MFCreateVirtualCamera!");
                 } else {
-                    println!("[LinkCam] Windows 11 Virtual Camera created, Start returned: {:?}", start_res);
+                    println!("[LinkCam] Windows 11 Virtual Camera created, Start returned: {:?}", start_hr);
                 }
-                Some(vcam)
+                Some(vcam_ptr as usize)
             } else {
                 None
             }
@@ -258,11 +260,23 @@ impl VirtualCameraDevice {
         if self.registered {
             #[cfg(target_os = "windows")]
             {
-                if let Some(vcam) = self.mf_vcam.take() {
-                    unsafe {
-                        let _ = vcam.Stop();
+                if let Some(ptr_val) = self.mf_vcam_ptr.take() {
+                    let ptr = ptr_val as *mut std::ffi::c_void;
+                    if !ptr.is_null() {
+                        unsafe {
+                            // Call IMFVirtualCamera::Stop() via COM vtable (method slot 38)
+                            let vtable = *(ptr as *mut *mut usize);
+                            let stop_fn: unsafe extern "system" fn(*mut std::ffi::c_void) -> windows::core::HRESULT =
+                                std::mem::transmute(*vtable.add(38));
+                            let _ = stop_fn(ptr);
+
+                            // Release COM interface (IUnknown::Release is slot 2)
+                            let release_fn: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32 =
+                                std::mem::transmute(*vtable.add(2));
+                            let _ = release_fn(ptr);
+                        }
+                        println!("[LinkCam] Media Foundation Virtual Camera stopped & released.");
                     }
-                    println!("[LinkCam] Media Foundation Virtual Camera stopped.");
                 }
 
                 if let Some(dll_path) = &self.filter_dll_path {
