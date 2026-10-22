@@ -77,7 +77,7 @@ jobs:
           fi
 
       - name: Upload Android APK Asset
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: LinkCam-Android-APK
           path: artifacts/LinkCam-Android.apk
@@ -175,7 +175,7 @@ jobs:
           Get-ChildItem artifacts
 
       - name: Upload Windows Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: LinkCam-Windows-Binaries
           path: artifacts/*
