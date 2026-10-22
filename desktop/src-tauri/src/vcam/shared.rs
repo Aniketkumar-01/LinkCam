@@ -46,11 +46,11 @@ impl Ring {
     }
 
     fn u32_at(&self, off: usize) -> &AtomicU32 {
-        unsafe { AtomicU32::from_ptr(self.base.add(off) as *mut u32) }
+        unsafe { &*(self.base.add(off) as *const AtomicU32) }
     }
 
     fn u64_at(&self, off: usize) -> &AtomicU64 {
-        unsafe { AtomicU64::from_ptr(self.base.add(off) as *mut u64) }
+        unsafe { &*(self.base.add(off) as *const AtomicU64) }
     }
 
     fn slot(&self, i: usize) -> *mut u8 {

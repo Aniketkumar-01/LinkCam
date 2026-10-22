@@ -124,9 +124,13 @@ jobs:
           cargo build --release --verbose
           cd ../..
           New-Item -ItemType Directory -Force -Path "desktop/src-tauri/target/release"
-          if (Test-Path "target/release/linkcam-desktop.exe" -and -not (Test-Path "desktop/src-tauri/target/release/linkcam-desktop.exe")) {
-            Copy-Item "target/release/linkcam-desktop.exe" "desktop/src-tauri/target/release/linkcam-desktop.exe" -Force
-            Write-Host "Staged linkcam-desktop.exe from root target directory"
+          $exe = (Get-ChildItem -Path "target" -Filter "linkcam-desktop.exe" -Recurse | Select-Object -First 1)?.FullName
+          if (-not $exe) {
+            $exe = (Get-ChildItem -Path "desktop/src-tauri" -Filter "linkcam-desktop.exe" -Recurse | Select-Object -First 1)?.FullName
+          }
+          if ($exe -and ($exe -ne (Resolve-Path "desktop/src-tauri/target/release/linkcam-desktop.exe" -ErrorAction SilentlyContinue)?.Path)) {
+            Copy-Item $exe "desktop/src-tauri/target/release/linkcam-desktop.exe" -Force
+            Write-Host "Staged linkcam-desktop.exe from $exe"
           }
 
       - name: Build Windows 11 Media Foundation Virtual Camera (Rust cdylib)
