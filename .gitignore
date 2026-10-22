@@ -17,6 +17,12 @@ build/
 **/build/
 *.apk
 *.aab
+application/*.exe
+application/*.apk
+!application/*.ps1
+!application/*.bat
+!application/*.cjs
+!application/*.md
 local.properties
 .cxx/
 captures/
@@ -42,3 +48,4 @@ Thumbs.db
 check_ci.*
 *.cjs.tmp
 desktop/fetch-ci.cjs
+.gitmessage

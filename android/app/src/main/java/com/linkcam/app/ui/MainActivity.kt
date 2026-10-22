@@ -95,17 +95,68 @@ class MainActivity : ComponentActivity() {
                 }
             },
             onCameraControlReceived = { command ->
-                // Remote PC commands (flip lens, torch, etc.)
+                // Remote PC commands (zoom, exposure, flip lens, torch, meeting mode)
                 runOnUiThread {
                     if (command.has("torch")) {
-                        cameraStreamer?.setTorch(command.get("torch").asBoolean)
+                        val torchVal = command.get("torch").asBoolean
+                        isTorchOn = torchVal
+                        cameraStreamer?.setTorch(torchVal)
+                    }
+                    if (command.has("zoom")) {
+                        val zoomVal = command.get("zoom").asFloat
+                        cameraStreamer?.setZoom(zoomVal)
+                    }
+                    if (command.has("ev")) {
+                        val evVal = command.get("ev").asFloat
+                        cameraStreamer?.setExposure(evVal)
                     }
                     if (command.has("lens")) {
                         val lensStr = command.get("lens").asString
-                        if (lensStr == "FRONT") {
-                            cameraStreamer?.setLens(CameraLens.FRONT)
-                        } else {
-                            cameraStreamer?.setLens(CameraLens.REAR_WIDE)
+                        val newLens = when (lensStr.uppercase()) {
+                            "FRONT" -> CameraLens.FRONT
+                            "REAR_ULTRA_WIDE", "ULTRAWIDE", "REARULTRAWIDE" -> CameraLens.REAR_ULTRA_WIDE
+                            "REAR_TELEPHOTO", "TELEPHOTO", "REARTELEPHOTO" -> CameraLens.REAR_TELEPHOTO
+                            else -> CameraLens.REAR_WIDE
+                        }
+                        currentLens = newLens
+                        cameraStreamer?.setLens(newLens)
+                    }
+                    if (command.has("action")) {
+                        val action = command.get("action").asString
+                        val params = if (command.has("params") && command.get("params").isJsonObject) {
+                            command.getAsJsonObject("params")
+                        } else null
+
+                        when (action) {
+                            "SetZoom" -> {
+                                val ratio = params?.get("ratio")?.asFloat ?: 1.0f
+                                cameraStreamer?.setZoom(ratio)
+                            }
+                            "SetExposure" -> {
+                                val ev = params?.get("ev")?.asFloat ?: 0.0f
+                                cameraStreamer?.setExposure(ev)
+                            }
+                            "SetTorch" -> {
+                                val torch = params?.get("enabled")?.asBoolean ?: false
+                                isTorchOn = torch
+                                cameraStreamer?.setTorch(torch)
+                            }
+                            "SetCameraLens" -> {
+                                val lensStr = params?.get("lens")?.asString ?: "RearWide"
+                                val newLens = when (lensStr) {
+                                    "Front" -> CameraLens.FRONT
+                                    "RearUltraWide" -> CameraLens.REAR_ULTRA_WIDE
+                                    "RearTelephoto" -> CameraLens.REAR_TELEPHOTO
+                                    else -> CameraLens.REAR_WIDE
+                                }
+                                currentLens = newLens
+                                cameraStreamer?.setLens(newLens)
+                            }
+                            "SetMeetingMode" -> {
+                                val enabled = params?.get("enabled")?.asBoolean ?: false
+                                isMeetingMode = enabled
+                                cameraStreamer?.setMeetingModeActive(enabled)
+                            }
                         }
                     }
                 }

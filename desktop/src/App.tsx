@@ -19,6 +19,8 @@ export const App: React.FC = () => {
   const [bitrateKbps, setBitrateKbps] = useState(0);
   const [latencyMs, setLatencyMs] = useState(0);
   const [connectionMode, setConnectionMode] = useState<'Usb' | 'DirectHotspot' | 'WiFi'>('WiFi');
+  const [hasAudio, setHasAudio] = useState(false);
+  const [audioLevelRms, setAudioLevelRms] = useState(0);
 
   // Real Pairing State from Rust Backend
   const [serverPort, setServerPort] = useState(8443);
@@ -71,6 +73,8 @@ export const App: React.FC = () => {
           bitrate_kbps: number;
           latency_ms: number;
           connection_mode: string;
+          audio_level_rms?: number;
+          has_audio?: boolean;
         }>('get_connection_status');
 
         if (status.is_connected) {
@@ -81,6 +85,8 @@ export const App: React.FC = () => {
           setFps(status.fps);
           setBitrateKbps(status.bitrate_kbps);
           setLatencyMs(status.latency_ms);
+          setHasAudio(Boolean(status.has_audio));
+          setAudioLevelRms(status.audio_level_rms || 0);
 
           const mode = status.connection_mode.toLowerCase();
           if (mode.includes('usb')) {
@@ -93,6 +99,8 @@ export const App: React.FC = () => {
         } else {
           setIsConnected(false);
           setDeviceName('No Device Connected');
+          setHasAudio(false);
+          setAudioLevelRms(0);
         }
       } catch {
         // Outside Tauri
@@ -202,6 +210,8 @@ export const App: React.FC = () => {
             isCharging={isCharging}
             connectionMode={connectionMode}
             isVcamActive={true}
+            hasAudio={hasAudio}
+            audioLevelRms={audioLevelRms}
             serverPort={serverPort}
             onTriggerPhoto={handleTriggerPhoto}
             onTriggerDocumentScan={handleTriggerDocumentScan}

@@ -28,6 +28,8 @@ pub struct ClientSession {
     pub last_telemetry: Option<TelemetryHeartbeat>,
     pub sequence_counter: Arc<AtomicU32>,
     pub control_tx: mpsc::Sender<CameraControl>,
+    pub last_audio_level_rms: f32,
+    pub total_audio_frames: u64,
 }
 
 impl ClientSession {
@@ -39,6 +41,8 @@ impl ClientSession {
             last_telemetry: None,
             sequence_counter: Arc::new(AtomicU32::new(1)),
             control_tx,
+            last_audio_level_rms: 0.0,
+            total_audio_frames: 0,
         }
     }
 
@@ -53,6 +57,11 @@ impl ClientSession {
     pub fn update_telemetry(&mut self, telemetry: TelemetryHeartbeat) {
         self.connection_mode = telemetry.connection_mode;
         self.last_telemetry = Some(telemetry);
+    }
+
+    pub fn update_audio_level(&mut self, rms: f32) {
+        self.last_audio_level_rms = rms;
+        self.total_audio_frames = self.total_audio_frames.saturating_add(1);
     }
 
     pub async fn send_control(&self, cmd: CameraControl) -> Result<(), mpsc::error::SendError<CameraControl>> {

@@ -1,9 +1,9 @@
 # LinkCam — Comprehensive Technical Architecture & System Specification
 
-**Version:** 1.2.1 (Production Release Baseline)  
-**Status:** Architecture & Implementation Baseline — Synchronized with v1.2.1 Release Codebase  
+**Version:** 1.2.4 (Production Release Baseline)  
+**Status:** Architecture & Implementation Baseline — Synchronized with v1.2.4 Release Codebase  
 **Author:** LinkCam Engineering Team  
-**Last Updated:** October 2026 (v1.2.1 DirectShow MFT Linker Fix, Live Studio Viewfinder Synchronization & Decoder Diagnostics)  
+**Last Updated:** October 2026 (v1.2.4 DirectShow IFilterMapper2 Category Registration, YUY2 Packed Color Conversion, 24-Format Dynamic Scaling & Cross-App Interop Matrix)  
 **Repository:** `Aniketkumar-01/LinkCam`  
 
 ---
@@ -346,6 +346,22 @@ stateDiagram-v2
       1. **Pairing Screen QR Scanner (`PairingScreen.kt`)**: Manages the 5-second pairing camera lifecycle via `ProcessCameraProvider` and feeds barcode frames to ML Kit / ZXing.
       2. **Document Scanner Offline Fallback (`DocumentScanner.kt`)**: Provides standalone document capture and perspective cropping when Google Play Services is absent.
 
+### 4.6 Desktop Companion Viewfinder & WebCodecs Hardware Pipeline
+
+To deliver a true zero-latency, CPU-efficient studio monitor on Windows without heavy desktop video decoding libraries or separate window handles:
+
+* **Hardware-Accelerated WebCodecs Decoding (`LiveStudio.tsx`)**:
+  - The React desktop companion utilizes the W3C WebCodecs API (`VideoDecoder`) running inside Microsoft Edge WebView2.
+  - Configured with `{ avc: { format: 'annexb' }, optimizeForLatency: true }`, supporting dynamic H.264 profile capability probing (`avc1.42001f`, `avc1.640028`, `avc1.4d002a`).
+  - Output video frames are rendered directly into an HTML5 `<canvas>` via `ctx.drawImage(videoFrame, 0, 0, width, height)` and immediately closed (`videoFrame.close()`) to avoid GPU texture leaks.
+* **Loopback WebSocket Stream Delivery (`server.rs`)**:
+  - The native Tokio server exposes a local loopback WebSocket server on `ws://127.0.0.1:8443`.
+  - When the user opens Live Studio, the frontend establishes a WebSocket connection. Inbound H.264 NAL units from the phone are broadcast zero-copy across Tokio channels to the local WebSocket client.
+  - **Buffer Lag Resilience**: Handled `tokio::sync::broadcast::error::RecvError::Lagged` gracefully, logging lag and preserving worker task execution so temporary UI freezes never terminate the WebSocket background listener.
+* **Keyframe-First Synchronization Guard**:
+  - WebCodecs decoders throw unrecoverable decode errors if fed inter-coded P-frames before receiving sequence parameters (SPS/PPS).
+  - `LiveStudio.tsx` gates incoming frames with an explicit keyframe-first barrier: all frames are dropped until an IDR frame (`flags & 0x01 != 0` or NAL unit type 5) arrives with prepended SPS/PPS parameter sets, ensuring glitch-free decoder initialization.
+
 ---
 
 ## 5. Virtual Camera Architecture: DirectShow & Media Foundation
@@ -355,68 +371,120 @@ Getting third-party Windows video conferencing applications to recognize a virtu
 ```mermaid
 graph TD
     subgraph "Windows Desktop Applications"
-        WIN32[OBS Studio / Zoom / Discord / Chrome / Edge / Desktop Teams (Win32)]
+        WIN32[OBS Studio / Zoom / Discord / WhatsApp / Chrome / Edge / Desktop Teams (Win32)]
         STORE[Windows 11 Store Apps / Packaged Teams (Phase 3.2)]
     end
 
     subgraph "LinkCam Virtual Camera System"
         DSHOW_64[DirectShow COM Filter DLL 64-bit: LinkCamDShow64.dll]
+        FMAP2[IFilterMapper2 Binary Category Registration: FilterData Blob]
         MF_PROBE[Windows 11 MFCreateVirtualCamera Dynamic Probe]
         SHMEM[32 MB Lockless Shared Memory Ring Buffer: Local\LinkCam_Video_Shm]
         EVENT[Manual-Reset Frame Sync Event: Local\LinkCam_Video_Event]
+        MFT_DEC[In-Process Windows Media Foundation H.264 MFT Decoder]
+        SCALER[ScaleNv12 Bilinear Scaler & Real-Time Color Converter NV12 -> YUY2 / RGB32 / RGB24]
     end
 
-    WIN32 --> |DirectShow Video Input Category| DSHOW_64
+    WIN32 --> |DirectShow Video Input Category| FMAP2
+    FMAP2 --> DSHOW_64
     STORE -.-> |Future IMFMediaSource Provider| MF_PROBE
 
     SHMEM --> DSHOW_64
     EVENT --> DSHOW_64
+    DSHOW_64 --> MFT_DEC
+    MFT_DEC --> SCALER
+    SCALER --> WIN32
 ```
 
-### 5.1 Dual-Path Virtual Camera Architecture & Scope
+### 5.1 Dual-Path Virtual Camera Architecture, Conformance & Registry Monikers
 
 1. **Active Implementation Baseline: DirectShow 64-bit COM Filter (`LinkCamDShow64.dll`)**:
-   - Primary compatibility across Windows 10 and Windows 11 for standard Win32 / 64-bit video conferencing software (OBS Studio, Zoom, Discord, Google Meet in Chrome/Firefox/Edge, and Microsoft Teams Classic Win32). Packaged Microsoft Teams (MSIX) and Windows Store camera apps require Windows Media Foundation and are marked unverified pending the Phase 3.2 interop matrix.
-   - **Canonical Category Registration**: Registered under `CLSID_VideoInputDeviceCategory` (`{860BB310-5D01-11D0-BD3B-00A0C911CE86}`) with custom filter GUID `{D37E5526-92F7-4E61-A76F-B590E8F88E29}`.
-   - Packaged and registered automatically via Inno Setup (`installer.iss`) using `regserver`.
+   - Primary compatibility across Windows 10 and Windows 11 for standard Win32 / 64-bit video conferencing and broadcast software (OBS Studio, Zoom, WhatsApp Desktop, Discord, Google Meet in Chrome/Firefox/Edge/Brave, and Microsoft Teams Classic Win32). Packaged Microsoft Teams (MSIX) and Windows Store camera apps require Windows Media Foundation and are marked unverified pending the Phase 3.2 interop matrix.
+   - **DirectShow `IFilterMapper2` Binary Category Registration**:
+     - DirectShow device enumeration APIs (`ICreateDevEnum::CreateClassEnumerator`), OBS Studio's `libdshowcapture`, Zoom, and WhatsApp Desktop locate video devices via binary `FilterData` metadata under `CLSID_VideoInputDeviceCategory` (`{860BB310-5D01-11D0-BD3B-00A0C911CE86}`).
+     - In `DllRegisterServer()`, LinkCam instantiates `CLSID_FilterMapper2` (`IFilterMapper2::RegisterFilter`), generating the official binary `FilterData` registration structure.
+     - Registers `REGFILTER2` (version 2) with `REGFILTERPINS2` linked to `PIN_CATEGORY_CAPTURE` (`{FB6C4281-0353-11D1-905F-0000C0CC16BA}`) and output flag `REG_PINFLAG_B_OUTPUT`.
+     - Explicitly declares all 4 supported major media subtypes directly within `FilterData`: `MEDIASUBTYPE_NV12`, `MEDIASUBTYPE_YUY2`, `MEDIASUBTYPE_RGB32`, and `MEDIASUBTYPE_RGB24`.
+     - This guarantees that third-party capture engines immediately detect LinkCam as a valid video hardware source and bind its output pin during capture graph construction.
+   - **Dual User/System COM Registration**:
+     - `DllRegisterServer()` and `mf_virtual_camera.rs` register the COM class (`CLSID_LinkCamDShowFilter` = `{D37E5526-92F7-4E61-A76F-B590E8F88E29}`) under both `HKEY_CURRENT_USER\Software\Classes\CLSID` (per-user, non-admin runtime registration) and `HKEY_LOCAL_MACHINE\Software\Classes\CLSID` (system-wide installer registration).
+     - Both hives configure `InprocServer32` with `ThreadingModel = "Both"` pointing directly to `LinkCamDShow64.dll`.
+     - Stale and orphaned registry monikers (`LinkCamVirtualCamera` and legacy GUIDs) are automatically purged across both hives upon initialization and registration, completely preventing duplicate ghost cameras in application device menus.
+   - **OBS Studio (`libdshowcapture`) Discovery & Moniker Recognition**:
+     - OBS Studio enumerates capture devices via moniker device paths. LinkCam registers `DevicePath = "\\?\root#media#linkcam_virtual_camera"`, `FriendlyName = "LinkCam Virtual Camera"`, and `Description = "LinkCam DirectShow Virtual Webcam"` under the category instance subkey.
+     - Implements `IAMFilterMiscFlags` (`AM_FILTER_MISC_FLAGS_IS_SOURCE = 0x1`) and `IPersistPropertyBag` on `LinkCamFilter` ensuring capture graph builders correctly treat the filter as an autonomous capture hardware source.
+   - **DirectShow Filter Graph State Transition Conformance**:
+     - `LinkCamFilter::Pause()` strictly returns `S_OK`. Returning `VFW_S_CANT_CUE` from `Pause()` caused Zoom, Chromium (Google Meet), and DirectShow graph builders to abort state transitions with *"Camera unavailable"* or *"Failed to start the video camera"*.
+     - Per DirectShow specifications, `VFW_S_CANT_CUE` is now strictly restricted to `IMediaFilter::GetState()` when in `State_Paused`, signalling that live capture streams do not produce preroll data while paused.
+   - **Dynamic Allocator Re-Commit**:
+     - Calls `m_pAllocator->Commit()` inside `LinkCamOutputPin::StartStreaming()` to guarantee sample allocator availability when video conferencing apps stop and restart video mid-meeting.
 2. **Phase 3.2 Extension Path: Windows 11 Media Foundation Virtual Camera**:
    - Windows 11 introduced `MFCreateVirtualCamera` in `mfplat.dll`. While LinkCam companion probes and verifies this API dynamically on Windows 11, DirectShow-only filters are not enumerated by packaged Windows Store / UWP apps (e.g. modern Windows Camera App or modern MSIX Teams). A full custom `IMFMediaSource` COM object is planned for Phase 3.2 to extend support to UWP Store apps.
 
-### 5.2 Shared Memory IPC Security, Multi-Reader Sync & Metadata Validation
+### 5.2 Shared Memory IPC Security, Multi-Format Negotiation, Scaling & In-Process MFT Decoding
 
 To ensure robust inter-process communication between the Rust companion and sandboxed conferencing applications without privilege escalation, frame theft, or crash vulnerabilities:
 
-1. **32 MB Capacity & NV12 Pixel Format**:
-   - Pixel format is explicitly defined as **NV12** (`MEDIASUBTYPE_NV12`, fourcc `0x3231564E`, 12 bits / 1.5 bytes per pixel, planar Y with interleaved UV).
-   - Single uncompressed 4K frame ($3840 \times 2160 \times 1.5$) requires $12.44\text{ MB}$; maximum supported geometry of $4096 \times 2160$ requires $13.27\text{ MB}$.
-   - Sized at `32 * 1024 * 1024` bytes (`Local\LinkCam_Video_Shm`), the mapping comfortably accommodates 4K frames and double-buffering margins.
+1. **32 MB Capacity & 24 Dynamic Negotiated Formats (NV12, YUY2, RGB32, RGB24)**:
+   - Sized at `32 * 1024 * 1024` bytes (`Local\LinkCam_Video_Shm`), the memory mapping accommodates 4K raw frames ($3840 \times 2160 \times 1.5 = 12.44\text{ MB}$) and double-buffering margins.
+   - **24 Dynamic Negotiated Formats**: Rather than restricting output to 1080p NV12, `LinkCamOutputPin` exposes 24 format combinations via `IEnumMediaTypes` and `IAMStreamConfig`:
+     - **Resolutions**: 1080p (1920x1080 @ 60/30 FPS), 720p (1280x720 @ 60/30 FPS), 480p (640x480 @ 30 FPS), 360p (640x360 @ 30 FPS).
+     - **Subtypes**:
+       - `MEDIASUBTYPE_NV12` (fourcc `0x3231564E`, 12-bit): Primary zero-copy planar YUV 4:2:0 directly output by hardware MediaCodec / MFT decoders.
+       - `MEDIASUBTYPE_YUY2` (fourcc `0x32595559`, 16-bit): Packed YUV 4:2:2 ($width \times height \times 2$ bytes). **Crucial for WhatsApp Desktop, OBS Studio, and video conferencing applications requiring 16-bit packed YUYV**.
+       - `MEDIASUBTYPE_RGB32` (fourcc `BI_RGB`, 32-bit): Packed BGRA format for Chromium, Electron, and Google Meet.
+       - `MEDIASUBTYPE_RGB24` (fourcc `BI_RGB`, 24-bit): Standard 24-bit BGR format for legacy DirectShow video players.
+     - **Optimized Real-Time NV12-to-YUY2 Conversion (`Nv12ToYuy2`)**:
+       - Executes row-by-row conversion unrolling planar Y ($width \times height$) and interleaved UV ($(width \times height)/2$) into packed $[Y_0, U_0, Y_1, V_0]$ byte quadruplets in a single linear pass with zero intermediate heap allocations.
+     - **Dynamic Bilinear Scaling (`ScaleNv12`)**: When client apps negotiate a resolution different from the active phone stream (e.g. 1080p stream negotiated down to 720p or 360p), the filter executes in-memory bilinear interpolation on Y and UV planes (`ScaleNv12`), guaranteeing correct geometry with zero aspect distortion.
+     - **Real-Time Color Space Conversion**: Direct conversion routines (`Nv12ToYuy2`, `Nv12ToRgb32`, and `Nv12ToRgb24`) convert decoded NV12 frames to the exact negotiated format.
+     - **Adaptive Standby Generator**: Renders smooth 60 FPS synthetic placeholder frames matching the exact negotiated resolution and format (NV12, YUY2, RGB32, RGB24) when the phone camera is disconnected, ensuring apps start up instantly without timeouts.
 
-2. **Explicit Low-Integrity & AppContainer SDDL Security Attributes**:
+2. **Hardware H.264 MFT In-Process Decoding & Dynamic Stream Change Handling**:
+   - Integrates the Windows Media Foundation hardware H.264 MFT decoder (`CLSID_CMSH264DecoderMFT`) directly inside `LinkCamDShow.cpp`.
+   - Incoming H.264 NAL packets from shared memory are fed into `ProcessInput` and decoded into uncompressed NV12 buffers via `ProcessOutput`.
+   - **Dynamic Format Renegotiation**: Seamlessly handles `MF_E_TRANSFORM_STREAM_CHANGE` (`0xC00D6D61`) and `MFT_OUTPUT_DATA_BUFFER_FORMAT_CHANGE`. When resolution shifts occur on the mobile device, `MftH264Decoder::Decode()` queries `GetOutputAvailableType`, reallocates output sample buffers matching `GetOutputStreamInfo`, and resumes decoding without pipeline stalls.
+
+3. **Explicit Low-Integrity & AppContainer SDDL Security Attributes**:
    - The shared memory file mapping and synchronization event are initialized with explicit SDDL:
      ```text
      D:(A;;GA;;;OW)(A;;GR;;;WD)(A;;GR;;;AC)S:(ML;;NW;;;LW)
      ```
    - **DACL**: Grants full control (`GA`) to current owner, read-only (`GR`) to Everyone (`WD`), and read-only (`GR`) to `ALL APPLICATION PACKAGES` (`AC`, `S-1-15-2-1`).
    - **SACL (Mandatory Label)**: Grants `No-Write-Up` for Low Mandatory Level (`ML_LOW`).
-   - **Sandbox & Store App Compatibility**: Explicitly allows sandboxed browsers (Chromium sandbox) and AppContainers within the active user session to map the frame buffer for reading, completely preventing `ERROR_ACCESS_DENIED` (Error 5). (Note: The Windows Camera Frame Server runs in Session 0, which cannot access user-session `Local\` namespaces; Phase 3.2 Media Foundation integration will transition to `Global\` with an explicit service ACL).
+   - **Sandbox & Store App Compatibility**: Explicitly allows sandboxed browsers (Chromium sandbox) and AppContainers within the active user session to map the frame buffer for reading, completely preventing `ERROR_ACCESS_DENIED` (Error 5).
 
-3. **Lockless Seqlock & Multi-Reader Non-Stealing Synchronization**:
+4. **Lockless Seqlock with Local Snapshotting Anti-Tearing Guard**:
    - Synchronization uses a **manual-reset event** (`Local\LinkCam_Video_Event`) paired with a standard **seqlock** protocol on monotonic sequence counters:
      - **Writer**: Sets sequence to odd (`base_seq - 1`), copies frame data into mapped memory, then volatile-writes sequence to even (`base_seq`) upon write completion before signaling the manual-reset event.
-     - **Readers**: All concurrent waiting consumer processes (e.g. Zoom and OBS running simultaneously) wake up together. If sequence is odd, the reader skips. After copying into its DirectShow sample buffer, the reader verifies `startSeq == endSeq`. If the sequence changed during copying, the torn sample is discarded. Readers independently process valid frames with zero locks and zero frame stealing.
+     - **Readers**: All concurrent waiting consumer processes wake up together. If sequence is odd, the reader skips.
+     - **Local Snapshotting**: To prevent torn frames when decoding in-process via MFT (which takes several milliseconds), the reader snapshots the packet data into a local stack/heap buffer before decoding, verifying `startSeq == endSeq`. If the sequence changed during copying, the torn sample is discarded.
 
-4. **Strict In-Process Consumer Metadata Validation & 4K Allocator**:
+5. **Strict In-Process Consumer Metadata Validation & Allocator Capacity**:
    - The DirectShow consumer (`LinkCamDShow.cpp`) executes inside the host process's address space. It validates:
      - **Magic & Version Verification**: Requires `magic == 0x4C4E4B43 ('LNKC')` and `version == 1`.
      - **Geometry Clamping**: Enforces width in $[16, 4096]$ and height in $[16, 2160]$.
      - **Buffer Bounds Enforcement**: Strictly validates `payload_size <= (32 MB - 64 bytes)` and clamps `copyLen = min(sampleSize, payload_size)` before copying into `IMediaSample`.
-     - **4K Sample Allocator Capacity**: Configures output pin buffer allocator with `m_lSampleSize = 3840 * 2160 * 4`, guaranteeing headroom for 4K video frames without buffer re-allocation jitter.
+     - **Sample Allocator Capacity**: Configures output pin buffer allocator with `m_lSampleSize = 3840 * 2160 * 4`, guaranteeing headroom for 4K video frames without buffer re-allocation jitter.
 
-### 5.3 Clarification of "No Driver" Claim & Clean Uninstallation
+### 5.3 Clarification of "No Driver" Claim, MSVC Toolchain & Out-of-Process Clean Uninstallation
 
 * **Accurate Architectural Definition**: LinkCam does **not** install kernel-mode drivers (`.sys` files running in Ring 0), meaning it requires **zero system reboots** and poses zero risk of Blue Screen of Death (BSOD) crashes.
 * **User-Mode Registration**: It registers user-mode COM filter DLLs (`LinkCamDShow64.dll`). Custom Media Foundation virtual camera objects (`IMFMediaSource`) will be registered in Phase 3.2.
-* **Uninstallation Cleanup**: Inno Setup (`installer.iss`) executes clean unregistration during uninstall via the `regserver` directive on `LinkCamDShow64.dll`, and invokes `regsvr32.exe /u /s` during uninstallation.
+* **Automated MSVC Build Pipeline & Dynamic Toolchain Resolution (`build.bat`)**:
+  - `desktop/vcam-dshow/build.bat` automatically locates MSVC x64 build tools (`cl.exe`) using `vswhere.exe` and `vcvars64.bat` across Visual Studio 2022 and 2019 (Community, Professional, Enterprise, BuildTools).
+  - Standalone compilation flags: `cl.exe /O2 /LD /std:c++17 /EHsc LinkCamDShow.cpp /link /DEF:LinkCamDShow.def /OUT:LinkCamDShow64.dll strmiids.lib ole32.lib oleaut32.lib user32.lib advapi32.lib mfplat.lib mfuuid.lib wmcodecdspuuid.lib`.
+  - Automatically executes `regsvr32.exe /s` and mirrors the built DLL to `desktop/src-tauri/target/release/` and `D:\Programs\LinkCam\`.
+* **Runtime Auto-Build & Dynamic Search Paths**:
+  - `Launch-LinkCam.bat` verifies `desktop\vcam-dshow\LinkCamDShow64.dll` on startup and automatically invokes `build.bat` if the DLL is missing before launching the desktop companion.
+  - `desktop/src-tauri/src/vcam/mf_virtual_camera.rs` dynamically probes candidate paths (`%LOCALAPPDATA%\Programs\LinkCam`, `%ProgramFiles%\LinkCam`, relative working directories, target release) and registers the DLL via `regsvr32` on companion startup.
+* **Robust Out-of-Process Uninstallation Cleanup**:
+  - Inno Setup (`installer.iss`) completely eliminates locked DLL errors (*"Some elements could not be removed"*) by abandoning in-process `regserver` loading.
+  - Installation registers the COM filter via `regsvr32.exe /s "{app}\LinkCamDShow64.dll"`.
+  - Uninstallation executes out-of-process unregistration via `regsvr32.exe /u /s "{app}\LinkCamDShow64.dll"` in `[UninstallRun]` and `InitializeUninstall()`.
+  - Enforces `restartreplace` and `uninsrestartdelete` flags on `LinkCamDShow64.dll`.
+  - In `InitializeSetup()` and `InitializeUninstall()`, automatically runs `taskkill /f /im linkcam-desktop.exe` and `net stop FrameServer` to release any active handles held by the Windows Camera Frame Server.
+  - `[UninstallDelete]` purges all application runtime residue and `%LOCALAPPDATA%` folders (`LinkCam` and `com.linkcam.desktop`), pruning `{app}` cleanly via `dirifempty`.
 
 ---
 
@@ -531,9 +599,9 @@ LinkCam/
 │   ├── installer.iss                # Inno Setup Windows installer script (DLL registration)
 │   ├── vcam-dshow/                  # 64-bit DirectShow COM Filter DLL (C++)
 │   │   ├── CMakeLists.txt           # CMake build configuration
-│   │   ├── LinkCamDShow.cpp         # Seqlock frame consumer, 4K allocator & COM sink
+│   │   ├── LinkCamDShow.cpp         # IFilterMapper2 registration, 24-format scaler, YUY2 converter, MFT decoder & COM sink
 │   │   ├── LinkCamDShow.def         # DirectShow InprocServer32 export definitions
-│   │   └── build.bat                # Standalone MSVC build script
+│   │   └── build.bat                # Standalone MSVC auto-detecting build & regsvr32 script
 │   ├── src-tauri/                   # Rust Native Backend & Engine
 │   │   ├── Cargo.toml               # Dependencies (Tauri v2, Tokio, Windows-rs)
 │   │   ├── build.rs                 # Resource compiler & icon generator hook
@@ -547,6 +615,7 @@ LinkCam/
 │   │       │   └── storage.rs       # Path traversal defense & safe timestamp file naming
 │   │       ├── network/
 │   │       │   ├── adb.rs           # System ADB detection, reverse port forwarding & intent push
+│   │       │   ├── crypto.rs        # RFC 8439 ChaCha20 authenticated stream encryption & key derivation
 │   │       │   ├── dpapi.rs         # Windows DPAPI hardware-bound token encryption
 │   │       │   ├── pairing.rs       # QR pairing session, rate limiting & 6-digit SAS PIN
 │   │       │   ├── server.rs        # Tokio TLS control server (port 8443) & audio/video frame router
@@ -563,7 +632,7 @@ LinkCam/
 │           ├── CameraControls.tsx   # Tactile lens, resolution, zoom & exposure controls
 │           ├── CapturesGallery.tsx  # Photos & scanned documents browser
 │           ├── DiagnosticsModal.tsx # Live RTT, jitter, and diagnostic bundle exporter
-│           ├── LiveStudio.tsx       # Live camera studio monitor & controls
+│           ├── LiveStudio.tsx       # Live camera studio monitor, WebCodecs VideoDecoder & canvas renderer
 │           ├── PairingVerificationModal.tsx # Mutual SAS / 6-digit PIN verification
 │           ├── PairingWizard.tsx    # Dynamic QR code & Wi-Fi hotspot guide
 │           ├── QuickCaptureTray.tsx # Floating instant delivery notification
@@ -571,10 +640,12 @@ LinkCam/
 │           ├── Sidebar.tsx          # Windows 11 Fluent sidebar navigation
 │           └── StreamHUD.tsx        # Live stream telemetry overlay
 │
+├── Launch-LinkCam.bat               # Automated launcher with DLL compile check & auto-build trigger
+├── Launch-LinkCam.vbs               # Silent background launcher
 ├── push_and_release.ps1             # Automated tag & GitHub release script (PowerShell)
 ├── push_and_release.bat             # Automated tag & GitHub release script (Batch)
 ├── .github/workflows/release.yml    # CI/CD multi-platform build & GitHub Releases pipeline
-└── CHANGELOG.md                     # Semantic version history (v1.0.0 - v1.0.18)
+└── CHANGELOG.md                     # Semantic version history (v1.0.0 - v1.2.4)
 ```
 
 ---
@@ -604,7 +675,7 @@ The wire protocol formalizes discrete failure modes via the `linkcam_protocol::E
 ### Supported Operating Systems & Hardware
 
 * **Android Mobile**:
-  - Minimum: **Android 8.0 (Oreo, API 26)** — Minimum requirement for MediaCodec baseline and Camera2.
+  - Minimum: **Android 10.0 (Q, API 29)** — Required for Camera2 multi-stream guarantees, Scoped Storage security, and high-performance network sockets (aligned with `minSdk = 29` in `build.gradle.kts` and `SPEC.md`).
   - Recommended: **Android 11+ (API 30+)** — Required for Camera2 multi-camera logical combinations, zero-shutter-lag capture, and high-performance Wi-Fi locks (`WIFI_MODE_FULL_HIGH_PERF`).
 * **Windows Desktop**:
   - Minimum: **Windows 10 64-bit (Version 1903, Build 18362+)** — DirectShow COM filter baseline (`LinkCamDShow64.dll`).
@@ -615,6 +686,17 @@ The wire protocol formalizes discrete failure modes via the `linkcam_protocol::E
   - `protocol`: Rust unit tests (`cargo test -p linkcam-protocol`) covering 24-byte packet header serialization, boundary checks, and chunk envelope integrity.
   - `desktop`: Tokio async server tests for rate limiting, token expiration, DPAPI encryption, and storage path traversal prevention.
   - `android`: Gradle unit tests (`./gradlew testDebugUnitTest`) verifying packet encoding, SAS calculation, and Camera2 state machine transitions.
+
+### Third-Party Application Interoperability Matrix
+
+| Client Application | Integration Mechanism | Supported Formats | Interoperability & Conformance Status |
+| :--- | :--- | :--- | :--- |
+| **OBS Studio** (64-bit) | DirectShow Video Capture Device (`libdshowcapture`) | YUY2, NV12, RGB32, RGB24 (1080p60/30, 720p60/30) | **Supported**: Enumerated via `DevicePath = "\\?\root#media#linkcam_virtual_camera"` and `FilterData` category registration. |
+| **Zoom Workplace** | DirectShow Video Input Filter | YUY2, NV12, RGB32 (1080p, 720p, 360p) | **Supported**: Starts cleanly with `Pause()` returning `S_OK` and adaptive multi-format standby frames. |
+| **Google Meet** (Chrome / Edge / Brave) | Chromium DirectShow Video Capture Provider | RGB32, NV12, YUY2 (720p30, 360p30) | **Supported**: Instant format negotiation with dynamic `ScaleNv12` bilinear scaler adapting to browser constraints. |
+| **WhatsApp Desktop** | DirectShow Video Media Graph | YUY2 (640x480, 1280x720) | **Supported**: High-performance `Nv12ToYuy2` packed pixel conversion delivers continuous, uncorrupted video. |
+| **Microsoft Teams Classic** (Win32) | DirectShow Capture Device | NV12, YUY2, RGB32 (1080p, 720p) | **Supported**: Enumerated and active under user-mode COM filter. |
+| **Discord Desktop** | DirectShow Video Capture Engine | NV12, YUY2, RGB32 (1080p, 720p) | **Supported**: Full compatibility under Video Input Device category without admin elevation. |
 
 ### Explicit Non-Goals
 
@@ -655,11 +737,14 @@ gantt
     Real Viewfinder & Telemetry Heartbeats     :done, p6_3, 2026-10-20, 1d
     Working Folder Picker & Clipboard Paste    :done, p6_4, 2026-10-20, 1d
     TypeScript Strict Build Verification       :done, p6_5, 2026-10-20, 1d
-    section Phase 7: Release v1.2.0 Stabilization
+    section Phase 7: Release v1.2.0 - v1.2.4 Stabilization
     ChaCha20 Wire Encryption & Nonces         :done, p7_1, 2026-10-21, 1d
     DirectShow COM Build & CI Pipeline         :done, p7_2, 2026-10-21, 1d
     ADB Single-Task & Device Enumeration       :done, p7_3, 2026-10-21, 1d
     CameraX Handoff & Pairing Mutual Alignment :done, p7_4, 2026-10-21, 1d
+    WebCodecs Viewfinder & MFT Decoding (v1.2.1) :done, p7_5, 2026-10-21, 1d
+    Multi-Resolution & OBS Discovery (v1.2.2/3):done, p7_6, 2026-10-21, 1d
+    IFilterMapper2, YUY2 & Interop (v1.2.4)    :done, p7_7, 2026-10-21, 1d
 ```
 
 ### Phase 1: P0 Security & Protocol Core (Implementation Baseline — Pending Interop Matrix)
@@ -751,7 +836,7 @@ gantt
   - Wired dynamic encoder bitrate control (`setBitrate()`) directly to `AbrController.kt` in `MainActivity.kt` to throttle encoding parameters seamlessly without session interruption.
   - Implemented hardware clock reference checking (`SENSOR_INFO_TIMESTAMP_SOURCE`) adjusting monotonic vs realtime timestamps for drift-free A/V synchronization, and memory-direct video-frame grab (`captureFrameFromStream()`) for instant captures.
 
-### Phase 7: Production Release Stabilization, Transport Encryption & Pairing Interop (v1.2.0 Released)
+### Phase 7: Production Release Stabilization, DirectShow Conformance, Multi-Resolution Scaling & Universal Interop (v1.2.4 Released)
 - [x] **Task 7.1: Zero-Copy ChaCha20 Wire Encryption & Key Derivation**
   - Implemented RFC 8439 ChaCha20 stream cipher in native Rust (`crypto.rs`) and pure Kotlin (`ChaCha20Cipher` in `SocketTransport.kt`), eliminating external crypto dependencies and JNI overhead.
   - Derived 32-byte transport session key via SHA-256 (`token:sessionId:linkcam_secure_v1`) with 12-byte deterministic nonces (sequence `u32` + monotonic timestamp `u64`).
@@ -786,4 +871,10 @@ gantt
   - Enabled OBS Studio (`libdshowcapture`) device discovery by writing required `DevicePath` (`\\?\root#media#linkcam_virtual_camera`) into DirectShow registry category and implementing `IAMFilterMiscFlags` (`AM_FILTER_MISC_FLAGS_IS_SOURCE = 0x1`) and `IPersistPropertyBag` on `LinkCamFilter`.
   - Eliminated duplicate virtual camera device listings in Google Meet, Zoom, and Windows device lists by purging legacy subkeys (`LinkCamVirtualCamera`, `LinkCam Virtual Camera`) across both HKCU and HKLM.
   - Resolved uninstaller locked DLL error ("Some elements could not be removed") and re-installation conflicts by migrating Inno Setup from in-process `regserver` to out-of-process `regsvr32.exe /u /s`, adding `restartreplace` and `uninsrestartdelete` flags, hooking `taskkill` and `net stop FrameServer` in `InitializeSetup`/`InitializeUninstall`, and utilizing `dirifempty` on `{app}`.
+- [x] **Task 7.9: DirectShow IFilterMapper2 Category Registration, YUY2 Packed Format & Universal Interop (v1.2.4)**
+  - Implemented `IFilterMapper2` COM category registration (`IFilterMapper2::RegisterFilter`) in `LinkCamDShow.cpp`, generating the official binary `FilterData` blob under `CLSID_VideoInputDeviceCategory` with `REGFILTER2` and `REGFILTERPINS2` pointing to `PIN_CATEGORY_CAPTURE` and declaring all four supported media subtypes (`MEDIASUBTYPE_NV12`, `MEDIASUBTYPE_YUY2`, `MEDIASUBTYPE_RGB32`, and `MEDIASUBTYPE_RGB24`).
+  - Added `MEDIASUBTYPE_YUY2` format support across all 4 resolutions (1080p, 720p, 480p, 360p), expanding stream format negotiation from 18 to 24 formats and resolving video delivery issues in apps requiring packed YUY2 (WhatsApp Desktop, OBS Studio, and video conferencing apps).
+  - Implemented optimized `Nv12ToYuy2` row-by-row conversion unrolling planar Y and UV planes into packed `[Y0, U0, Y1, V0]` bytes with zero heap allocation overhead.
+  - Implemented automated MSVC compiler detection and build script `build.bat` using `vswhere.exe` and `vcvars64.bat` across Visual Studio 2022/2019 versions, with automatic COM registration via `regsvr32.exe /s` and multi-directory DLL mirroring.
+  - Added automated build check in `Launch-LinkCam.bat` and dynamic search path resolution in `desktop/src-tauri/src/vcam/mf_virtual_camera.rs`, ensuring the virtual camera filter DLL is automatically compiled and registered upon launch if absent.
 

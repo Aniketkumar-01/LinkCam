@@ -5,6 +5,13 @@ All notable changes to **LinkCam** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2026-10-22
+
+### Added
+- **Discrete Hardware Camera Controls (End-to-End)**: Added tactile remote camera controls from Windows Desktop companion to Android Camera2 engine. Supports native zoom (`CaptureRequest.CONTROL_ZOOM_RATIO` on Android 11+ / API 30+ with `SCALER_CROP_REGION` fallback for API 29), exposure compensation (`CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION` with hardware step resolution), torch toggle, and multi-lens switching (Rear Wide, Ultra-Wide, Telephoto, Front). All controls update repeating capture requests dynamically without tearing down camera sessions.
+- **Microphone Audio Streaming & Live VU Telemetry**: Enabled low-latency 48 kHz 16-bit PCM stereo microphone streaming over the existing authenticated TLS/TCP socket (`PacketType::AudioFrame`, `0x02`). Implemented Root Mean Square (RMS) audio level processing in Rust desktop backend and added a real-time micro-VU meter bar to the Windows 11 Fluent 2 Stream HUD.
+- **Native Windows 11 Media Foundation User-Mode Virtual Camera**: Implemented dynamic detection and user-mode virtual camera registration via `MFCreateVirtualCamera` (`mfplat.dll`) on Windows 11, providing native camera integration for UWP and modern Windows applications with zero kernel driver overhead and automatic fallback to DirectShow COM filter registration.
+
 ## [1.2.3] - 2026-10-21
 
 ### Fixed

@@ -49,6 +49,8 @@ class CameraStreamer(
     private var currentLens: CameraLens = CameraLens.REAR_WIDE
     private var isTorchEnabled: Boolean = false
     private var isMeetingModeActive: Boolean = false
+    private var currentZoom: Float = 1.0f
+    private var currentExposureEv: Float = 0.0f
     private val targetResolution = Size(1920, 1080)
     private var latestStillJpeg: ByteArray? = null
 
@@ -193,26 +195,7 @@ class CameraStreamer(
                 override fun onConfigured(session: CameraCaptureSession) {
                     if (cameraDevice == null) return
                     captureSession = session
-                    try {
-                        val encSurface = h264Encoder?.inputSurface
-                        if (encSurface == null || !encSurface.isValid) return
-
-                        val requestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
-                            addTarget(encSurface)
-                            val currentPrev = previewSurface
-                            if (currentPrev != null && currentPrev.isValid && !isMeetingModeActive) {
-                                addTarget(currentPrev)
-                            }
-                            set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-                            set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
-                            if (isTorchEnabled) {
-                                set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH)
-                            }
-                        }
-                        session.setRepeatingRequest(requestBuilder.build(), null, backgroundHandler)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error configuring repeating request: ${e.message}", e)
-                    }
+                    applyRepeatingRequest()
                 }
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
@@ -230,6 +213,73 @@ class CameraStreamer(
                 startCaptureSession(includeImageReader = false)
             }
         }
+    }
+
+    private fun applyRepeatingRequest() {
+        val camera = cameraDevice ?: return
+        val session = captureSession ?: return
+        val encSurface = h264Encoder?.inputSurface ?: return
+        if (!encSurface.isValid) return
+
+        try {
+            val requestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                addTarget(encSurface)
+                val currentPrev = previewSurface
+                if (currentPrev != null && currentPrev.isValid && !isMeetingModeActive) {
+                    addTarget(currentPrev)
+                }
+                set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+                set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
+                if (isTorchEnabled) {
+                    set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH)
+                }
+
+                applyZoom(this)
+                applyExposure(this)
+            }
+            session.setRepeatingRequest(requestBuilder.build(), null, backgroundHandler)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying repeating request: ${e.message}", e)
+        }
+    }
+
+    private fun applyZoom(builder: CaptureRequest.Builder) {
+        val cameraId = selectCameraId(currentLens) ?: return
+        try {
+            val chars = cameraManager.getCameraCharacteristics(cameraId)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                val zoomRange = chars.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)
+                if (zoomRange != null) {
+                    val clamped = currentZoom.coerceIn(zoomRange.lower, zoomRange.upper)
+                    builder.set(CaptureRequest.CONTROL_ZOOM_RATIO, clamped)
+                    return
+                }
+            }
+
+            val activeRect = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+            if (activeRect != null && currentZoom > 1.0f) {
+                val cropW = (activeRect.width() / currentZoom).toInt()
+                val cropH = (activeRect.height() / currentZoom).toInt()
+                val cropX = (activeRect.width() - cropW) / 2
+                val cropY = (activeRect.height() - cropH) / 2
+                val cropRect = android.graphics.Rect(cropX, cropY, cropX + cropW, cropY + cropH)
+                builder.set(CaptureRequest.SCALER_CROP_REGION, cropRect)
+            }
+        } catch (ignored: Exception) {}
+    }
+
+    private fun applyExposure(builder: CaptureRequest.Builder) {
+        val cameraId = selectCameraId(currentLens) ?: return
+        try {
+            val chars = cameraManager.getCameraCharacteristics(cameraId)
+            val range = chars.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE) ?: return
+            val stepRational = chars.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP) ?: return
+            val step = stepRational.toFloat()
+            if (step > 0f) {
+                val index = (currentExposureEv / step).toInt().coerceIn(range.lower, range.upper)
+                builder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, index)
+            }
+        } catch (ignored: Exception) {}
     }
 
     private fun selectCameraId(lens: CameraLens): String? {
@@ -266,7 +316,17 @@ class CameraStreamer(
 
     fun setTorch(enabled: Boolean) {
         isTorchEnabled = enabled
-        startCaptureSession()
+        applyRepeatingRequest()
+    }
+
+    fun setZoom(ratio: Float) {
+        currentZoom = ratio.coerceAtLeast(1.0f)
+        applyRepeatingRequest()
+    }
+
+    fun setExposure(ev: Float) {
+        currentExposureEv = ev
+        applyRepeatingRequest()
     }
 
     fun setLens(lens: CameraLens) {

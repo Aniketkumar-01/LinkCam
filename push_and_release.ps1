@@ -1,6 +1,6 @@
 param(
-    [string]$Tag = "v1.2.1",
-    [string]$Message = "Release v1.2.1: Fix DirectShow MFT link errors, resolve Live Studio video decode synchronization, and add decoder diagnostics"
+    [string]$Tag = "v1.2.4",
+    [string]$Message = "Release v1.2.4: Discrete camera controls, 48kHz audio streaming with VU telemetry, and Windows 11 Media Foundation virtual camera"
 )
 
 Write-Host "========================================================" -ForegroundColor Cyan

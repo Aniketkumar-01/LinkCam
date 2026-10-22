@@ -1,6 +1,6 @@
 [package]
 name = "linkcam-desktop"
-version = "1.2.3"
+version = "1.2.4"
 description = "LinkCam Windows Desktop Companion App"
 authors = ["LinkCam Team"]
 edition = "2021"

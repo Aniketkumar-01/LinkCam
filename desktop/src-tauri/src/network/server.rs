@@ -172,6 +172,37 @@ impl NetworkServer {
         // Derive 32-byte transport session key from mutual pairing credentials
         let session_key = crate::network::crypto::derive_session_key(parts[0], parts[1]);
 
+        // Outbound packet transmission queue & task
+        let (outbound_tx, mut outbound_rx) = mpsc::channel::<Vec<u8>>(32);
+        let write_task = tokio::spawn(async move {
+            while let Some(bytes) = outbound_rx.recv().await {
+                if writer.write_all(&bytes).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        // Forward remote camera control RPCs from desktop IPC to phone over TCP
+        let control_rx_arc = self.control_rx.clone();
+        let outbound_tx_ctrl = outbound_tx.clone();
+        let control_task = tokio::spawn(async move {
+            let mut rx = control_rx_arc.lock().await;
+            let mut seq = 100u32;
+            while let Some(cmd) = rx.recv().await {
+                if let Ok(json_bytes) = serde_json::to_vec(&cmd) {
+                    seq = seq.wrapping_add(1);
+                    let hdr = PacketHeader::new(PacketType::CameraControl, seq, 0, json_bytes.len() as u32);
+                    let mut pkt_buf = Vec::with_capacity(HEADER_SIZE + json_bytes.len());
+                    if hdr.write_to(&mut pkt_buf).is_ok() {
+                        pkt_buf.extend_from_slice(&json_bytes);
+                        if outbound_tx_ctrl.send(pkt_buf).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
         // Update session
         {
             let mut session_guard = self.session.write().await;
@@ -214,7 +245,7 @@ impl NetworkServer {
                     let pong_header = PacketHeader::new(PacketType::KeepAlivePing, hdr.sequence, hdr.timestamp, 0);
                     let mut pong_buf = Vec::new();
                     if pong_header.write_to(&mut pong_buf).is_ok() {
-                        let _ = writer.write_all(&pong_buf).await;
+                        let _ = outbound_tx.send(pong_buf).await;
                     }
                 }
                 PacketType::Disconnect => {
@@ -225,7 +256,19 @@ impl NetworkServer {
                     let _ = self.video_frame_tx.send(packet);
                 }
                 PacketType::AudioFrame => {
-                    // 48 kHz 16-bit PCM stereo audio frame received
+                    // Calculate RMS amplitude from 48 kHz 16-bit PCM stereo samples
+                    let mut sum_sq = 0.0f32;
+                    let mut count = 0usize;
+                    for chunk in packet.payload.chunks_exact(2) {
+                        let sample = i16::from_le_bytes([chunk[0], chunk[1]]) as f32 / 32768.0;
+                        sum_sq += sample * sample;
+                        count += 1;
+                    }
+                    let rms = if count > 0 { (sum_sq / count as f32).sqrt().min(1.0) } else { 0.0 };
+                    let mut sess = self.session.write().await;
+                    if let Some(s) = sess.as_mut() {
+                        s.update_audio_level(rms);
+                    }
                 }
                 PacketType::InstantCaptureChunk => {
                     let _ = self.capture_chunk_tx.send(packet).await;
@@ -241,6 +284,10 @@ impl NetworkServer {
                 _ => {}
             }
         }
+
+        // Abort background sender tasks upon disconnect
+        write_task.abort();
+        control_task.abort();
 
         // Cleanup session on disconnect
         {

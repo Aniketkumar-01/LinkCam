@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Grid, Smartphone, Video } from 'lucide-react';
 import { CameraControls, CameraLensType } from './CameraControls';
 import { StreamHUD } from './StreamHUD';
+import { invokeTauri } from '../tauriApi';
 
 interface LiveStudioProps {
   isConnected: boolean;
@@ -12,6 +13,8 @@ interface LiveStudioProps {
   isCharging: boolean;
   connectionMode: 'Usb' | 'DirectHotspot' | 'WiFi';
   isVcamActive: boolean;
+  hasAudio?: boolean;
+  audioLevelRms?: number;
   serverPort?: number;
   onTriggerPhoto: () => void;
   onTriggerDocumentScan: () => void;
@@ -27,6 +30,8 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
   isCharging,
   connectionMode,
   isVcamActive,
+  hasAudio = false,
+  audioLevelRms = 0,
   serverPort = 8443,
   onTriggerPhoto,
   onTriggerDocumentScan,
@@ -43,6 +48,52 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
   const [statusMessage, setStatusMessage] = useState('Synchronizing hardware video pipeline');
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Helper to send camera control to phone via Tauri backend
+  const sendControl = (action: string, params: Record<string, unknown>) => {
+    invokeTauri('send_camera_control', { action, params }).catch((err) => {
+      console.warn(`[LinkCam Controls] Failed to dispatch ${action}:`, err);
+    });
+  };
+
+  const handleLensChange = (newLens: CameraLensType) => {
+    setLens(newLens);
+    sendControl('set_lens', { lens: newLens });
+  };
+
+  const handleToggleTorch = () => {
+    const nextTorch = !torch;
+    setTorch(nextTorch);
+    sendControl('set_torch', { enabled: nextTorch });
+  };
+
+  const zoomDebounceRef = useRef<number | null>(null);
+  const handleZoomChange = (val: number) => {
+    setZoom(val);
+    if (zoomDebounceRef.current) {
+      window.clearTimeout(zoomDebounceRef.current);
+    }
+    zoomDebounceRef.current = window.setTimeout(() => {
+      sendControl('set_zoom', { ratio: val });
+    }, 40);
+  };
+
+  const exposureDebounceRef = useRef<number | null>(null);
+  const handleExposureChange = (val: number) => {
+    setExposure(val);
+    if (exposureDebounceRef.current) {
+      window.clearTimeout(exposureDebounceRef.current);
+    }
+    exposureDebounceRef.current = window.setTimeout(() => {
+      sendControl('set_exposure', { ev: val });
+    }, 40);
+  };
+
+  const handleToggleMeetingMode = () => {
+    const nextMode = !meetingMode;
+    setMeetingMode(nextMode);
+    sendControl('set_meeting_mode', { enabled: nextMode });
+  };
   const decoderRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const hasReceivedVideoRef = useRef(false);
@@ -309,6 +360,8 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
               isCharging={isCharging}
               connectionMode={connectionMode}
               isVcamActive={isVcamActive}
+              hasAudio={hasAudio}
+              audioLevelRms={audioLevelRms}
               onOpenDiagnostics={onOpenDiagnostics}
             />
 
@@ -351,15 +404,15 @@ export const LiveStudio: React.FC<LiveStudioProps> = ({
       {isConnected && (
         <CameraControls
           currentLens={lens}
-          onChangeLens={setLens}
+          onChangeLens={handleLensChange}
           isTorchOn={torch}
-          onToggleTorch={() => setTorch(!torch)}
+          onToggleTorch={handleToggleTorch}
           zoomRatio={zoom}
-          onChangeZoom={setZoom}
+          onChangeZoom={handleZoomChange}
           exposureEv={exposure}
-          onChangeExposure={setExposure}
+          onChangeExposure={handleExposureChange}
           isMeetingMode={meetingMode}
-          onToggleMeetingMode={() => setMeetingMode(!meetingMode)}
+          onToggleMeetingMode={handleToggleMeetingMode}
           onTriggerPhoto={onTriggerPhoto}
           onTriggerDocumentScan={onTriggerDocumentScan}
           resolution={resolution}

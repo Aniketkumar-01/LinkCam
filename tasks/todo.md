@@ -277,3 +277,61 @@
 - `desktop/src/components/LiveStudio.tsx`
 - `android/app/src/main/java/com/linkcam/app/ui/theme/Theme.kt`
 **Estimated scope:** S (2 files)
+
+---
+
+## Phase 5: DroidCam Comparative Enhancements
+
+### Task 16: Granular Hardware Camera Controls (Zoom, EV, Torch, Lens)
+**Description:** Implement end-to-end remote camera hardware controls allowing Windows companion to adjust camera zoom ratio, exposure compensation index, torch state, and lens selection with zero latency.
+**Acceptance criteria:**
+- [x] Android `CameraStreamer.kt` implements Camera2 `CONTROL_ZOOM_RATIO` (with crop region fallback) and `CONTROL_AE_EXPOSURE_COMPENSATION` without recreating session.
+- [x] Android `MainActivity.kt` processes incoming CameraControl RPCs for zoom, EV, torch, and lens switching.
+- [x] Desktop Rust server (`server.rs`) wires `control_rx` to outbound TCP socket stream so commands are dispatched immediately to phone.
+- [x] Desktop Tauri commands expose `send_camera_control` for zoom, EV, torch, lens, and meeting mode.
+- [x] Desktop UI (`LiveStudio.tsx`, `CameraControls.tsx`) dispatches debounced control updates to Tauri backend.
+**Verification:**
+- [x] Code inspection and unit tests verify packet transmission and range boundary handling.
+**Dependencies:** Task 1, Task 2, Task 7, Task 10
+**Files likely touched:**
+- `android/app/src/main/java/com/linkcam/app/camera/CameraStreamer.kt`
+- `android/app/src/main/java/com/linkcam/app/ui/MainActivity.kt`
+- `desktop/src-tauri/src/network/server.rs`
+- `desktop/src-tauri/src/main.rs`
+- `desktop/src/components/LiveStudio.tsx`
+**Estimated scope:** M (5 files)
+
+---
+
+### Task 17: Low-Latency Phone Audio Streaming & Desktop VU Telemetry
+**Description:** Stream synchronized 48kHz 16-bit PCM microphone audio from Android phone over existing TLS connection into Desktop companion, providing real-time audio input level (VU meter) in Desktop HUD.
+**Acceptance criteria:**
+- [x] Android `AudioStreamer.kt` and `MainActivity.kt` stream tagged `AudioFrame` (`0x02`) packets over active connection.
+- [x] Desktop Rust server receives and buffers `AudioFrame` packets without stalling video frames.
+- [x] Desktop companion calculates real-time RMS audio level and exposes via session status / telemetry for live UI VU meter.
+- [x] Desktop HUD displays live audio status pill and volume indicator.
+**Verification:**
+- [x] Audio frame packet serialization and RMS level calculations pass tests.
+**Dependencies:** Task 1, Task 2, Task 7, Task 10
+**Files likely touched:**
+- `desktop/src-tauri/src/network/server.rs`
+- `desktop/src-tauri/src/main.rs`
+- `desktop/src/components/StreamHUD.tsx`
+- `desktop/src/components/LiveStudio.tsx`
+**Estimated scope:** S (4 files)
+
+---
+
+### Task 18: Windows 11 Native Media Foundation User-Mode Virtual Camera
+**Description:** Implement Windows 11 `MFCreateVirtualCamera` API registration wrapper in `mf_virtual_camera.rs`, providing user-mode virtual camera registration with zero kernel driver overhead.
+**Acceptance criteria:**
+- [x] `mf_virtual_camera.rs` dynamically checks for `MFCreateVirtualCamera` in `mfplat.dll` on Windows 11.
+- [x] Invokes `MFCreateVirtualCamera` with `MFVirtualCameraType_SoftwareCameraSource` and user lifetime.
+- [x] Falls back seamlessly to DirectShow COM filter registration on Windows 10 or when MF virtual camera is unavailable.
+**Verification:**
+- [x] Rust registration module compiles cleanly and verifies fallback paths.
+**Dependencies:** Task 5
+**Files likely touched:**
+- `desktop/src-tauri/src/vcam/mf_virtual_camera.rs`
+**Estimated scope:** S (1 file)
+

@@ -11,8 +11,8 @@ android {
         applicationId = "com.linkcam.app"
         minSdk = 29 // Android 10+
         targetSdk = 34
-        versionCode = 13
-        versionName = "1.2.1"
+        versionCode = 14
+        versionName = "1.2.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

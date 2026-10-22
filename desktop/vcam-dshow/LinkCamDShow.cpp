@@ -260,6 +260,78 @@ public:
         m_outputConfigured = false;
     }
 
+    bool DrainOutput(std::vector<uint8_t>& outNv12) {
+        if (!m_pDecoder) return false;
+        MFT_OUTPUT_DATA_BUFFER outputBuffer = {0};
+        outputBuffer.dwStreamID = m_outStreamId;
+
+        IMFSample* pOutSample = NULL;
+        if (FAILED(MFCreateSample(&pOutSample)) || !pOutSample) return false;
+
+        MFT_OUTPUT_STREAM_INFO osi = {0};
+        DWORD bufSize = m_width * m_height * 3 / 2;
+        if (SUCCEEDED(m_pDecoder->GetOutputStreamInfo(m_outStreamId, &osi)) && osi.cbSize > bufSize) {
+            bufSize = osi.cbSize;
+        }
+
+        IMFMediaBuffer* pOutMediaBuf = NULL;
+        if (FAILED(MFCreateMemoryBuffer(bufSize, &pOutMediaBuf)) || !pOutMediaBuf) {
+            pOutSample->Release();
+            return false;
+        }
+
+        pOutSample->AddBuffer(pOutMediaBuf);
+        pOutMediaBuf->Release();
+        outputBuffer.pSample = pOutSample;
+
+        DWORD dwStatus = 0;
+        HRESULT hr = m_pDecoder->ProcessOutput(0, 1, &outputBuffer, &dwStatus);
+
+        // Handle dynamic stream change requested by H.264 SPS/PPS
+        if (hr == MF_E_TRANSFORM_STREAM_CHANGE || (dwStatus & MFT_OUTPUT_DATA_BUFFER_FORMAT_CHANGE)) {
+            ConfigureOutputType();
+            if (outputBuffer.pSample) {
+                outputBuffer.pSample->Release();
+                outputBuffer.pSample = NULL;
+            }
+            DWORD newBufSize = m_width * m_height * 3 / 2;
+            if (SUCCEEDED(m_pDecoder->GetOutputStreamInfo(m_outStreamId, &osi)) && osi.cbSize > newBufSize) {
+                newBufSize = osi.cbSize;
+            }
+            if (SUCCEEDED(MFCreateSample(&outputBuffer.pSample)) && outputBuffer.pSample) {
+                IMFMediaBuffer* pNewBuf = NULL;
+                if (SUCCEEDED(MFCreateMemoryBuffer(newBufSize, &pNewBuf)) && pNewBuf) {
+                    outputBuffer.pSample->AddBuffer(pNewBuf);
+                    pNewBuf->Release();
+                }
+            }
+            dwStatus = 0;
+            hr = m_pDecoder->ProcessOutput(0, 1, &outputBuffer, &dwStatus);
+        }
+
+        bool gotFrame = false;
+        if (SUCCEEDED(hr) && outputBuffer.pSample) {
+            IMFMediaBuffer* pResBuf = NULL;
+            if (SUCCEEDED(outputBuffer.pSample->ConvertToContiguousBuffer(&pResBuf)) && pResBuf) {
+                BYTE* pData = NULL;
+                DWORD curLen = 0;
+                if (SUCCEEDED(pResBuf->Lock(&pData, NULL, &curLen)) && pData) {
+                    if (outNv12.size() != curLen) {
+                        outNv12.resize(curLen);
+                    }
+                    memcpy(outNv12.data(), pData, curLen);
+                    pResBuf->Unlock();
+                    gotFrame = true;
+                }
+                pResBuf->Release();
+            }
+            outputBuffer.pSample->Release();
+        } else if (outputBuffer.pSample) {
+            outputBuffer.pSample->Release();
+        }
+        return gotFrame;
+    }
+
     bool Decode(const uint8_t* pNalData, uint32_t nalSize, uint64_t timestampUs,
                 std::vector<uint8_t>& outNv12) {
         if (!m_initialized && !Init(m_width, m_height)) return false;
@@ -290,83 +362,12 @@ public:
         HRESULT hr = m_pDecoder->ProcessInput(m_inStreamId, pSample, 0);
         pSample->Release();
 
-        if (FAILED(hr)) {
-            char msg[160];
-            sprintf_s(msg, "[LinkCam Decoder] ProcessInput failed: 0x%08lX\n",
-                      static_cast<unsigned long>(hr));
-            OutputDebugStringA(msg);
-            return false;
+        if (hr == MF_E_NOTACCEPTING) {
+            // Drain output queue to free up decoder slots
+            DrainOutput(outNv12);
         }
 
-        MFT_OUTPUT_DATA_BUFFER outputBuffer = {0};
-        outputBuffer.dwStreamID = m_outStreamId;
-
-        IMFSample* pOutSample = NULL;
-        if (FAILED(MFCreateSample(&pOutSample)) || !pOutSample) return false;
-
-        MFT_OUTPUT_STREAM_INFO osi = {0};
-        DWORD bufSize = m_width * m_height * 3 / 2;
-        if (SUCCEEDED(m_pDecoder->GetOutputStreamInfo(m_outStreamId, &osi)) && osi.cbSize > bufSize) {
-            bufSize = osi.cbSize;
-        }
-
-        IMFMediaBuffer* pOutMediaBuf = NULL;
-        if (FAILED(MFCreateMemoryBuffer(bufSize, &pOutMediaBuf)) || !pOutMediaBuf) {
-            pOutSample->Release();
-            return false;
-        }
-
-        pOutSample->AddBuffer(pOutMediaBuf);
-        pOutMediaBuf->Release();
-        outputBuffer.pSample = pOutSample;
-
-        DWORD dwStatus = 0;
-        hr = m_pDecoder->ProcessOutput(0, 1, &outputBuffer, &dwStatus);
-
-        // Handle dynamic stream change requested by H.264 SPS/PPS
-        if (hr == MF_E_TRANSFORM_STREAM_CHANGE || (dwStatus & MFT_OUTPUT_DATA_BUFFER_FORMAT_CHANGE)) {
-            ConfigureOutputType();
-            if (outputBuffer.pSample) {
-                outputBuffer.pSample->Release();
-                outputBuffer.pSample = NULL;
-            }
-            DWORD newBufSize = m_width * m_height * 3 / 2;
-            if (SUCCEEDED(m_pDecoder->GetOutputStreamInfo(m_outStreamId, &osi)) && osi.cbSize > newBufSize) {
-                newBufSize = osi.cbSize;
-            }
-            if (SUCCEEDED(MFCreateSample(&outputBuffer.pSample)) && outputBuffer.pSample) {
-                IMFMediaBuffer* pNewBuf = NULL;
-                if (SUCCEEDED(MFCreateMemoryBuffer(newBufSize, &pNewBuf)) && pNewBuf) {
-                    outputBuffer.pSample->AddBuffer(pNewBuf);
-                    pNewBuf->Release();
-                }
-            }
-            dwStatus = 0;
-            hr = m_pDecoder->ProcessOutput(0, 1, &outputBuffer, &dwStatus);
-        }
-
-        if (SUCCEEDED(hr) && outputBuffer.pSample) {
-            IMFMediaBuffer* pResBuf = NULL;
-            if (SUCCEEDED(outputBuffer.pSample->ConvertToContiguousBuffer(&pResBuf)) && pResBuf) {
-                BYTE* pData = NULL;
-                DWORD curLen = 0;
-                if (SUCCEEDED(pResBuf->Lock(&pData, NULL, &curLen)) && pData) {
-                    if (outNv12.size() != curLen) {
-                        outNv12.resize(curLen);
-                    }
-                    memcpy(outNv12.data(), pData, curLen);
-                    pResBuf->Unlock();
-                }
-                pResBuf->Release();
-            }
-            outputBuffer.pSample->Release();
-            return true;
-        }
-
-        if (outputBuffer.pSample) {
-            outputBuffer.pSample->Release();
-        }
-        return false;
+        return DrainOutput(outNv12);
     }
 };
 
@@ -402,6 +403,25 @@ static void ScaleNv12(const uint8_t* src, int srcW, int srcH, uint8_t* dst, int 
             int sx = (x * srcUVW) / dstUVW;
             dstRowUV[x * 2]     = srcRowUV[sx * 2];
             dstRowUV[x * 2 + 1] = srcRowUV[sx * 2 + 1];
+        }
+    }
+}
+
+static void Nv12ToYuy2(const uint8_t* nv12, uint8_t* yuy2, int width, int height) {
+    if (!nv12 || !yuy2 || width <= 0 || height <= 0) return;
+    const uint8_t* yPlane = nv12;
+    const uint8_t* uvPlane = nv12 + width * height;
+
+    for (int y = 0; y < height; y++) {
+        const uint8_t* yRow = yPlane + y * width;
+        const uint8_t* uvRow = uvPlane + (y / 2) * width;
+        uint8_t* dstRow = yuy2 + y * (width * 2);
+
+        for (int x = 0; x < width; x += 2) {
+            dstRow[x * 2]     = yRow[x];
+            dstRow[x * 2 + 1] = uvRow[x];
+            dstRow[x * 2 + 2] = yRow[x + 1];
+            dstRow[x * 2 + 3] = uvRow[x + 1];
         }
     }
 }
@@ -458,6 +478,7 @@ static void Nv12ToRgb32(const uint8_t* nv12, uint8_t* rgb, int width, int height
 static void RenderStandbyFrame(uint8_t* dst, int width, int height, GUID subtype, uint32_t frameCount) {
     if (width <= 0 || height <= 0 || !dst) return;
     bool isNv12 = (subtype == MEDIASUBTYPE_NV12);
+    bool isYuy2 = (subtype == MEDIASUBTYPE_YUY2);
     bool isRgb32 = (subtype == MEDIASUBTYPE_RGB32);
 
     if (isNv12) {
@@ -477,6 +498,31 @@ static void RenderStandbyFrame(uint8_t* dst, int width, int height, GUID subtype
                     int uvIdx = width * height + (y / 2) * width + (x & ~1);
                     dst[uvIdx] = 190;
                     dst[uvIdx + 1] = 70;
+                }
+            }
+        }
+    } else if (isYuy2) {
+        // Slate gray YUY2 background: Y=32, U=128, Y=32, V=128
+        for (size_t i = 0; i < (size_t)width * height * 2; i += 4) {
+            dst[i]     = 32;  // Y0
+            dst[i + 1] = 128; // U
+            dst[i + 2] = 32;  // Y1
+            dst[i + 3] = 128; // V
+        }
+        int cx = width / 2;
+        int cy = height / 2;
+        int boxSize = std::clamp(std::min(width, height) / 24 + 10, 8, 48);
+        for (int y = cy - boxSize; y <= cy + boxSize; y++) {
+            if (y < 0 || y >= height) continue;
+            for (int x = cx - boxSize; x <= cx + boxSize; x += 2) {
+                if (x < 0 || x + 1 >= width) continue;
+                if (x <= cx - boxSize + 1 || x >= cx + boxSize - 1 || y == cy - boxSize || y == cy + boxSize ||
+                    (x >= cx - 4 && x <= cx + 4 && y >= cy - 4 && y <= cy + 4)) {
+                    int idx = (y * width + x) * 2;
+                    dst[idx]     = 210; // Y0
+                    dst[idx + 1] = 190; // U
+                    dst[idx + 2] = 210; // Y1
+                    dst[idx + 3] = 70;  // V
                 }
             }
         }
@@ -522,8 +568,12 @@ static void BuildMediaType(AM_MEDIA_TYPE* pmt, int width, int height, int fps, G
     pmt->bTemporalCompression = FALSE;
 
     bool isNv12 = (subtype == MEDIASUBTYPE_NV12);
+    bool isYuy2 = (subtype == MEDIASUBTYPE_YUY2);
     bool isRgb32 = (subtype == MEDIASUBTYPE_RGB32);
-    size_t sampleSize = isNv12 ? ((size_t)width * height * 3 / 2) : (isRgb32 ? ((size_t)width * height * 4) : ((size_t)width * height * 3));
+    size_t sampleSize = isNv12 ? ((size_t)width * height * 3 / 2) :
+                        isYuy2 ? ((size_t)width * height * 2) :
+                        isRgb32 ? ((size_t)width * height * 4) :
+                        ((size_t)width * height * 3);
     pmt->lSampleSize = (ULONG)sampleSize;
     pmt->formattype = FORMAT_VideoInfo;
     pmt->cbFormat = sizeof(VIDEOINFOHEADER);
@@ -542,10 +592,11 @@ static void BuildMediaType(AM_MEDIA_TYPE* pmt, int width, int height, int fps, G
 
     vih->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     vih->bmiHeader.biWidth = width;
-    vih->bmiHeader.biHeight = height; // Positive for bottom-up RGB and standard NV12
+    vih->bmiHeader.biHeight = height; // Positive for bottom-up RGB and standard NV12/YUY2
     vih->bmiHeader.biPlanes = 1;
-    vih->bmiHeader.biBitCount = isNv12 ? 12 : (isRgb32 ? 32 : 24);
-    vih->bmiHeader.biCompression = isNv12 ? MAKEFOURCC('N','V','1','2') : BI_RGB;
+    vih->bmiHeader.biBitCount = isNv12 ? 12 : (isYuy2 ? 16 : (isRgb32 ? 32 : 24));
+    vih->bmiHeader.biCompression = isNv12 ? MAKEFOURCC('N','V','1','2') :
+                                  (isYuy2 ? MAKEFOURCC('Y','U','Y','2') : BI_RGB);
     vih->bmiHeader.biSizeImage = (DWORD)sampleSize;
 }
 
@@ -694,6 +745,8 @@ static const FormatSpec g_SupportedFormats[] = {
     // 1080p
     { 1920, 1080, 60, MEDIASUBTYPE_NV12 },
     { 1920, 1080, 30, MEDIASUBTYPE_NV12 },
+    { 1920, 1080, 60, MEDIASUBTYPE_YUY2 },
+    { 1920, 1080, 30, MEDIASUBTYPE_YUY2 },
     { 1920, 1080, 60, MEDIASUBTYPE_RGB32 },
     { 1920, 1080, 30, MEDIASUBTYPE_RGB32 },
     { 1920, 1080, 60, MEDIASUBTYPE_RGB24 },
@@ -702,6 +755,8 @@ static const FormatSpec g_SupportedFormats[] = {
     // 720p (Crucial for Google Meet, Zoom, OBS standard capture)
     { 1280, 720,  60, MEDIASUBTYPE_NV12 },
     { 1280, 720,  30, MEDIASUBTYPE_NV12 },
+    { 1280, 720,  60, MEDIASUBTYPE_YUY2 },
+    { 1280, 720,  30, MEDIASUBTYPE_YUY2 },
     { 1280, 720,  60, MEDIASUBTYPE_RGB32 },
     { 1280, 720,  30, MEDIASUBTYPE_RGB32 },
     { 1280, 720,  60, MEDIASUBTYPE_RGB24 },
@@ -709,11 +764,13 @@ static const FormatSpec g_SupportedFormats[] = {
 
     // 480p (Standard 4:3 fallback)
     { 640,  480,  30, MEDIASUBTYPE_NV12 },
+    { 640,  480,  30, MEDIASUBTYPE_YUY2 },
     { 640,  480,  30, MEDIASUBTYPE_RGB32 },
     { 640,  480,  30, MEDIASUBTYPE_RGB24 },
 
     // 360p (Low bandwidth fallback for Meet & Zoom)
     { 640,  360,  30, MEDIASUBTYPE_NV12 },
+    { 640,  360,  30, MEDIASUBTYPE_YUY2 },
     { 640,  360,  30, MEDIASUBTYPE_RGB32 },
     { 640,  360,  30, MEDIASUBTYPE_RGB24 },
 };
@@ -786,12 +843,13 @@ public:
 // ----------------------------------------------------------------------------
 // Minimal DirectShow Filter with IAMFilterMiscFlags & IPersistPropertyBag
 // ----------------------------------------------------------------------------
-class LinkCamFilter : public IBaseFilter, public IAMFilterMiscFlags, public IPersistPropertyBag {
+class LinkCamFilter : public IBaseFilter, public IAMFilterMiscFlags, public IPersistPropertyBag, public IKsPropertySet {
 public:
     std::atomic<long> m_refCount{1};
     FILTER_STATE m_state = State_Stopped;
     LinkCamOutputPin* m_pPin = NULL;
     IFilterGraph* m_pGraph = NULL;
+    IReferenceClock* m_pClock = NULL;
 
     LinkCamFilter() {
         m_pPin = new LinkCamOutputPin(this);
@@ -799,6 +857,7 @@ public:
     }
     virtual ~LinkCamFilter() {
         if (m_pPin) { m_pPin->Release(); m_pPin = NULL; }
+        if (m_pClock) { m_pClock->Release(); m_pClock = NULL; }
         --g_cLock;
     }
 
@@ -817,6 +876,11 @@ public:
         }
         if (riid == __uuidof(IPersistPropertyBag)) {
             *ppv = static_cast<IPersistPropertyBag*>(this);
+            AddRef();
+            return S_OK;
+        }
+        if (riid == IID_IKsPropertySet || riid == __uuidof(IKsPropertySet)) {
+            *ppv = static_cast<IKsPropertySet*>(this);
             AddRef();
             return S_OK;
         }
@@ -840,6 +904,11 @@ public:
     STDMETHODIMP Load(IPropertyBag* pPropBag, IErrorLog* pErrorLog) override { return S_OK; }
     STDMETHODIMP Save(IPropertyBag* pPropBag, BOOL fClearDirty, BOOL fSaveAllProperties) override { return E_NOTIMPL; }
 
+    // IKsPropertySet
+    STDMETHODIMP Set(REFGUID guidPropSet, DWORD dwPropID, LPVOID pInstanceData, DWORD cbInstanceData, LPVOID pPropData, DWORD cbPropData) override { return E_NOTIMPL; }
+    STDMETHODIMP Get(REFGUID guidPropSet, DWORD dwPropID, LPVOID pInstanceData, DWORD cbInstanceData, LPVOID pPropData, DWORD cbPropData, DWORD* pcbReturned) override { return E_NOTIMPL; }
+    STDMETHODIMP QuerySupported(REFGUID guidPropSet, DWORD dwPropID, DWORD* pTypeSupport) override { return E_NOTIMPL; }
+
     // IPersist
     STDMETHODIMP GetClassID(CLSID* pClsid) override {
         if (!pClsid) return E_POINTER;
@@ -856,7 +925,7 @@ public:
     STDMETHODIMP Pause() override {
         m_state = State_Paused;
         if (m_pPin) m_pPin->StartStreaming();
-        return S_OK; // Return S_OK on Pause as specified by DirectShow BaseFilter contract
+        return S_OK;
     }
     STDMETHODIMP Run(REFERENCE_TIME tStart) override {
         m_state = State_Running;
@@ -866,10 +935,20 @@ public:
     STDMETHODIMP GetState(DWORD dwMilliSecsTimeout, FILTER_STATE* State) override {
         if (!State) return E_POINTER;
         *State = m_state;
-        return (m_state == State_Paused) ? VFW_S_CANT_CUE : S_OK;
+        return S_OK;
     }
-    STDMETHODIMP SetSyncSource(IReferenceClock* pClock) override { return S_OK; }
-    STDMETHODIMP GetSyncSource(IReferenceClock** pClock) override { if (pClock) *pClock = NULL; return S_OK; }
+    STDMETHODIMP SetSyncSource(IReferenceClock* pClock) override {
+        if (m_pClock) { m_pClock->Release(); m_pClock = NULL; }
+        m_pClock = pClock;
+        if (m_pClock) m_pClock->AddRef();
+        return S_OK;
+    }
+    STDMETHODIMP GetSyncSource(IReferenceClock** pClock) override {
+        if (!pClock) return E_POINTER;
+        *pClock = m_pClock;
+        if (m_pClock) m_pClock->AddRef();
+        return S_OK;
+    }
 
     // IBaseFilter
     STDMETHODIMP EnumPins(IEnumPins** ppEnum) override {
@@ -975,9 +1054,14 @@ STDMETHODIMP LinkCamOutputPin::Connect(IPin* pReceivePin, const AM_MEDIA_TYPE* p
         }
         if (m_pAllocator) {
             ALLOCATOR_PROPERTIES prop = {0}, actual = {0};
-            prop.cBuffers = 3;
-            prop.cbBuffer = (long)std::max<size_t>(m_currentMediaType.lSampleSize, 1920 * 1080 * 4);
-            prop.cbAlign = 1;
+            ALLOCATOR_PROPERTIES req = {0};
+            if (SUCCEEDED(m_pInputPin->GetAllocatorRequirements(&req))) {
+                prop = req;
+            }
+            if (prop.cBuffers < 3) prop.cBuffers = 3;
+            long minSize = (long)std::max<size_t>(m_currentMediaType.lSampleSize, (size_t)1920 * 1080 * 4);
+            if (prop.cbBuffer < minSize) prop.cbBuffer = minSize;
+            if (prop.cbAlign < 1) prop.cbAlign = 1;
             m_pAllocator->SetProperties(&prop, &actual);
             m_pInputPin->NotifyAllocator(m_pAllocator, FALSE);
             m_pAllocator->Commit();
@@ -1039,6 +1123,7 @@ STDMETHODIMP LinkCamOutputPin::QueryAccept(const AM_MEDIA_TYPE* pmt) {
     if (!pmt) return E_POINTER;
     if (pmt->majortype == MEDIATYPE_Video) {
         if (pmt->subtype == MEDIASUBTYPE_NV12 ||
+            pmt->subtype == MEDIASUBTYPE_YUY2 ||
             pmt->subtype == MEDIASUBTYPE_RGB24 ||
             pmt->subtype == MEDIASUBTYPE_RGB32) {
             return S_OK;
@@ -1146,13 +1231,13 @@ void LinkCamOutputPin::StartStreaming() {
 
 void LinkCamOutputPin::StopStreaming() {
     m_bRunning = false;
-    if (m_pAllocator) {
-        m_pAllocator->Decommit();
-    }
     if (m_hThread) {
         WaitForSingleObject(m_hThread, 500);
         CloseHandle(m_hThread);
         m_hThread = NULL;
+    }
+    if (m_pAllocator) {
+        m_pAllocator->Decommit();
     }
     m_shm.Close();
 }
@@ -1161,6 +1246,7 @@ void LinkCamOutputPin::StopStreaming() {
 // Streaming Thread Procedure
 // ----------------------------------------------------------------------------
 DWORD WINAPI LinkCamOutputPin::ThreadProc(LPVOID lpParam) {
+    HRESULT hrCom = CoInitializeEx(NULL, COINIT_MULTITHREADED);
     LinkCamOutputPin* pin = (LinkCamOutputPin*)lpParam;
     REFERENCE_TIME rtTime = 0;
     const REFERENCE_TIME rtFrameDuration = 10000000 / 60; // 60 FPS (16.6ms)
@@ -1170,11 +1256,14 @@ DWORD WINAPI LinkCamOutputPin::ThreadProc(LPVOID lpParam) {
     std::vector<uint8_t> scaledNv12;
     std::vector<uint8_t> rgbBuffer;
     std::vector<uint8_t> localPayload;
+    std::vector<uint8_t> cachedNv12;
+    int cachedW = 1920, cachedH = 1080;
     uint32_t frameCount = 0;
 
     while (pin->m_bRunning) {
+        DWORD loopStartTick = GetTickCount();
         frameCount++;
-        bool hasNewFrame = pin->m_shm.WaitForFrame(17);
+        pin->m_shm.WaitForFrame(10);
 
         if (!pin->m_pInputPin || !pin->m_pAllocator) {
             Sleep(10);
@@ -1200,20 +1289,22 @@ DWORD WINAPI LinkCamOutputPin::ThreadProc(LPVOID lpParam) {
 
         GUID subtype = pin->m_currentMediaType.subtype;
         bool isNv12 = (subtype == MEDIASUBTYPE_NV12);
+        bool isYuy2 = (subtype == MEDIASUBTYPE_YUY2);
         bool isRgb32 = (subtype == MEDIASUBTYPE_RGB32);
-        long targetSize = isNv12 ? ((long)targetWidth * targetHeight * 3 / 2) : (isRgb32 ? ((long)targetWidth * targetHeight * 4) : ((long)targetWidth * targetHeight * 3));
+        long targetSize = isNv12 ? ((long)targetWidth * targetHeight * 3 / 2) :
+                          (isYuy2 ? ((long)targetWidth * targetHeight * 2) :
+                          (isRgb32 ? ((long)targetWidth * targetHeight * 4) : ((long)targetWidth * targetHeight * 3)));
 
         const auto* hdr = pin->m_shm.GetHeader();
         const uint8_t* payload = pin->m_shm.GetPayload();
         const uint32_t maxAllowedPayload = (32 * 1024 * 1024) - sizeof(ShmVideoHeader);
 
-        bool frameValid = false;
-        if (hasNewFrame && hdr && hdr->magic == SHM_MAGIC && hdr->version == 1 &&
+        if (hdr && hdr->magic == SHM_MAGIC && hdr->version == 1 &&
             hdr->payload_size > 0 && hdr->payload_size <= maxAllowedPayload && payload) {
 
             uint32_t startSeq = hdr->sequence;
             if ((startSeq & 1) == 0 && startSeq != pin->m_lastSequence) {
-                // Safely snapshot payload to prevent seqlock torn frame during decode
+                pin->m_lastSequence = startSeq;
                 localPayload.assign(payload, payload + hdr->payload_size);
                 if (hdr->sequence == startSeq) {
                     int srcW = (hdr->width > 0) ? (int)hdr->width : 1920;
@@ -1221,80 +1312,61 @@ DWORD WINAPI LinkCamOutputPin::ThreadProc(LPVOID lpParam) {
 
                     if (hdr->format == 0) { // H.264
                         if (decoder.Decode(localPayload.data(), (uint32_t)localPayload.size(), hdr->timestamp_us, decodedNv12)) {
-                            pin->m_lastSequence = startSeq;
-                            frameValid = true;
-
                             if (decoder.GetWidth() > 0 && decoder.GetHeight() > 0) {
-                                srcW = (int)decoder.GetWidth();
-                                srcH = (int)decoder.GetHeight();
-                            }
-
-                            const uint8_t* pFinalNv12 = decodedNv12.data();
-                            if (srcW != targetWidth || srcH != targetHeight) {
-                                size_t scaledSize = (size_t)targetWidth * targetHeight * 3 / 2;
-                                if (scaledNv12.size() != scaledSize) scaledNv12.resize(scaledSize);
-                                ScaleNv12(decodedNv12.data(), srcW, srcH, scaledNv12.data(), targetWidth, targetHeight);
-                                pFinalNv12 = scaledNv12.data();
-                            }
-
-                            if (isNv12) {
-                                long copyLen = (long)(std::min)((size_t)sampleCapacity, (size_t)targetWidth * targetHeight * 3 / 2);
-                                memcpy(pData, pFinalNv12, copyLen);
-                                pSample->SetActualDataLength(copyLen);
-                            } else if (isRgb32) {
-                                size_t rgbSize = (size_t)targetWidth * targetHeight * 4;
-                                if (rgbBuffer.size() != rgbSize) rgbBuffer.resize(rgbSize);
-                                Nv12ToRgb32(pFinalNv12, rgbBuffer.data(), targetWidth, targetHeight);
-                                long copyLen = (long)(std::min)((size_t)sampleCapacity, rgbSize);
-                                memcpy(pData, rgbBuffer.data(), copyLen);
-                                pSample->SetActualDataLength(copyLen);
+                                cachedW = (int)decoder.GetWidth();
+                                cachedH = (int)decoder.GetHeight();
                             } else {
-                                size_t rgbSize = (size_t)targetWidth * targetHeight * 3;
-                                if (rgbBuffer.size() != rgbSize) rgbBuffer.resize(rgbSize);
-                                Nv12ToRgb24(pFinalNv12, rgbBuffer.data(), targetWidth, targetHeight);
-                                long copyLen = (long)(std::min)((size_t)sampleCapacity, rgbSize);
-                                memcpy(pData, rgbBuffer.data(), copyLen);
-                                pSample->SetActualDataLength(copyLen);
+                                cachedW = srcW;
+                                cachedH = srcH;
                             }
+                            cachedNv12 = decodedNv12;
                         }
-                    } else if (hdr->format == 1) { // NV12 directly
-                        pin->m_lastSequence = startSeq;
-                        frameValid = true;
-
-                        const uint8_t* pFinalNv12 = localPayload.data();
-                        if (srcW != targetWidth || srcH != targetHeight) {
-                            size_t scaledSize = (size_t)targetWidth * targetHeight * 3 / 2;
-                            if (scaledNv12.size() != scaledSize) scaledNv12.resize(scaledSize);
-                            ScaleNv12(localPayload.data(), srcW, srcH, scaledNv12.data(), targetWidth, targetHeight);
-                            pFinalNv12 = scaledNv12.data();
-                        }
-
-                        if (isNv12) {
-                            long copyLen = (long)(std::min)((size_t)sampleCapacity, (size_t)targetWidth * targetHeight * 3 / 2);
-                            memcpy(pData, pFinalNv12, copyLen);
-                            pSample->SetActualDataLength(copyLen);
-                        } else if (isRgb32) {
-                            size_t rgbSize = (size_t)targetWidth * targetHeight * 4;
-                            if (rgbBuffer.size() != rgbSize) rgbBuffer.resize(rgbSize);
-                            Nv12ToRgb32(pFinalNv12, rgbBuffer.data(), targetWidth, targetHeight);
-                            long copyLen = (long)(std::min)((size_t)sampleCapacity, rgbSize);
-                            memcpy(pData, rgbBuffer.data(), copyLen);
-                            pSample->SetActualDataLength(copyLen);
-                        } else {
-                            size_t rgbSize = (size_t)targetWidth * targetHeight * 3;
-                            if (rgbBuffer.size() != rgbSize) rgbBuffer.resize(rgbSize);
-                            Nv12ToRgb24(pFinalNv12, rgbBuffer.data(), targetWidth, targetHeight);
-                            long copyLen = (long)(std::min)((size_t)sampleCapacity, rgbSize);
-                            memcpy(pData, rgbBuffer.data(), copyLen);
-                            pSample->SetActualDataLength(copyLen);
-                        }
+                    } else if (hdr->format == 1) { // NV12
+                        cachedW = srcW;
+                        cachedH = srcH;
+                        cachedNv12 = localPayload;
                     }
                 }
             }
         }
 
-        // Deliver standby frame if waiting for phone camera stream (bounds checked!)
-        if (!frameValid) {
+        // Output cached phone video if available, else render standby screen
+        if (!cachedNv12.empty()) {
+            const uint8_t* pFinalNv12 = cachedNv12.data();
+            if (cachedW != targetWidth || cachedH != targetHeight) {
+                size_t scaledSize = (size_t)targetWidth * targetHeight * 3 / 2;
+                if (scaledNv12.size() != scaledSize) scaledNv12.resize(scaledSize);
+                ScaleNv12(cachedNv12.data(), cachedW, cachedH, scaledNv12.data(), targetWidth, targetHeight);
+                pFinalNv12 = scaledNv12.data();
+            }
+
+            if (isNv12) {
+                long copyLen = (long)(std::min)((size_t)sampleCapacity, (size_t)targetWidth * targetHeight * 3 / 2);
+                memcpy(pData, pFinalNv12, copyLen);
+                pSample->SetActualDataLength(copyLen);
+            } else if (isYuy2) {
+                size_t yuy2Size = (size_t)targetWidth * targetHeight * 2;
+                if (rgbBuffer.size() != yuy2Size) rgbBuffer.resize(yuy2Size);
+                Nv12ToYuy2(pFinalNv12, rgbBuffer.data(), targetWidth, targetHeight);
+                long copyLen = (long)(std::min)((size_t)sampleCapacity, yuy2Size);
+                memcpy(pData, rgbBuffer.data(), copyLen);
+                pSample->SetActualDataLength(copyLen);
+            } else if (isRgb32) {
+                size_t rgbSize = (size_t)targetWidth * targetHeight * 4;
+                if (rgbBuffer.size() != rgbSize) rgbBuffer.resize(rgbSize);
+                Nv12ToRgb32(pFinalNv12, rgbBuffer.data(), targetWidth, targetHeight);
+                long copyLen = (long)(std::min)((size_t)sampleCapacity, rgbSize);
+                memcpy(pData, rgbBuffer.data(), copyLen);
+                pSample->SetActualDataLength(copyLen);
+            } else {
+                size_t rgbSize = (size_t)targetWidth * targetHeight * 3;
+                if (rgbBuffer.size() != rgbSize) rgbBuffer.resize(rgbSize);
+                Nv12ToRgb24(pFinalNv12, rgbBuffer.data(), targetWidth, targetHeight);
+                long copyLen = (long)(std::min)((size_t)sampleCapacity, rgbSize);
+                memcpy(pData, rgbBuffer.data(), copyLen);
+                pSample->SetActualDataLength(copyLen);
+            }
+        } else {
             long len = (long)(std::min)((long)sampleCapacity, targetSize);
             if (sampleCapacity >= targetSize) {
                 RenderStandbyFrame(pData, targetWidth, targetHeight, subtype, frameCount);
@@ -1310,6 +1382,15 @@ DWORD WINAPI LinkCamOutputPin::ThreadProc(LPVOID lpParam) {
         pin->m_pInputPin->Receive(pSample);
         pSample->Release();
         rtTime += rtFrameDuration;
+
+        DWORD elapsed = GetTickCount() - loopStartTick;
+        if (elapsed < 16) {
+            Sleep(16 - elapsed);
+        }
+    }
+
+    if (SUCCEEDED(hrCom)) {
+        CoUninitialize();
     }
     return 0;
 }
@@ -1370,6 +1451,43 @@ STDAPI DllCanUnloadNow() {
     return (g_cLock == 0) ? S_OK : S_FALSE;
 }
 
+static void RegisterInprocServer(HKEY rootKey, const WCHAR* szModule) {
+    const WCHAR* clsidKey = L"Software\\Classes\\CLSID\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
+    HKEY hKey = NULL;
+    if (RegCreateKeyExW(rootKey, clsidKey, 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        const WCHAR* friendlyName = L"LinkCam Virtual Camera";
+        RegSetValueExW(hKey, NULL, 0, REG_SZ, (const BYTE*)friendlyName, (DWORD)((wcslen(friendlyName) + 1) * sizeof(WCHAR)));
+
+        HKEY hSubKey = NULL;
+        if (RegCreateKeyExW(hKey, L"InprocServer32", 0, NULL, 0, KEY_WRITE, NULL, &hSubKey, NULL) == ERROR_SUCCESS) {
+            RegSetValueExW(hSubKey, NULL, 0, REG_SZ, (const BYTE*)szModule, (DWORD)((wcslen(szModule) + 1) * sizeof(WCHAR)));
+            const WCHAR* threading = L"Both";
+            RegSetValueExW(hSubKey, L"ThreadingModel", 0, REG_SZ, (const BYTE*)threading, (DWORD)((wcslen(threading) + 1) * sizeof(WCHAR)));
+            RegCloseKey(hSubKey);
+        }
+        RegCloseKey(hKey);
+    }
+}
+
+static void RegisterCategoryKeys(HKEY rootKey) {
+    const WCHAR* catKey = L"Software\\Classes\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
+    HKEY hKey = NULL;
+    if (RegCreateKeyExW(rootKey, catKey, 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        const WCHAR* name = L"LinkCam Virtual Camera";
+        RegSetValueExW(hKey, L"FriendlyName", 0, REG_SZ, (const BYTE*)name, (DWORD)((wcslen(name) + 1) * sizeof(WCHAR)));
+        const WCHAR* filterClsid = L"{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
+        RegSetValueExW(hKey, L"CLSID", 0, REG_SZ, (const BYTE*)filterClsid, (DWORD)((wcslen(filterClsid) + 1) * sizeof(WCHAR)));
+
+        // Critical for OBS Studio (libdshowcapture) device discovery:
+        const WCHAR* devicePath = L"\\\\?\\root#media#linkcam_virtual_camera";
+        RegSetValueExW(hKey, L"DevicePath", 0, REG_SZ, (const BYTE*)devicePath, (DWORD)((wcslen(devicePath) + 1) * sizeof(WCHAR)));
+        const WCHAR* desc = L"LinkCam DirectShow Virtual Webcam";
+        RegSetValueExW(hKey, L"Description", 0, REG_SZ, (const BYTE*)desc, (DWORD)((wcslen(desc) + 1) * sizeof(WCHAR)));
+
+        RegCloseKey(hKey);
+    }
+}
+
 STDAPI DllRegisterServer() {
     WCHAR szModule[MAX_PATH];
     if (!GetModuleFileNameW(g_hInst, szModule, MAX_PATH)) return E_FAIL;
@@ -1386,54 +1504,74 @@ STDAPI DllRegisterServer() {
         L"Software\\Classes\\CLSID\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}"
     };
 
-    // Clean HKLM to ensure no conflicting/duplicate system-wide entries exist
     for (const auto* k : legacyKeys) {
         RegDeleteKeyW(HKEY_LOCAL_MACHINE, k);
-    }
-    // Clean legacy HKCU entries
-    RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\Classes\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\LinkCamVirtualCamera");
-    RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\Classes\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\LinkCam Virtual Camera");
-    RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\Classes\\CLSID\\{86497AEE-B071-11D0-A3A0-00A0C9223196}\\Instance\\LinkCamVirtualCamera");
-    RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\Classes\\CLSID\\{86497AEE-B071-11D0-A3A0-00A0C9223196}\\Instance\\LinkCam Virtual Camera");
-    RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\Classes\\CLSID\\{86497AEE-B071-11D0-A3A0-00A0C9223196}\\Instance\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}");
-
-    // 1. Register CLSID\{D37E5526-92F7-4E61-A76F-B590E8F88E29}
-    const WCHAR* clsidKey = L"Software\\Classes\\CLSID\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
-    HKEY hKey = NULL;
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, clsidKey, 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        const WCHAR* friendlyName = L"LinkCam Virtual Camera";
-        RegSetValueExW(hKey, NULL, 0, REG_SZ, (const BYTE*)friendlyName, (DWORD)((wcslen(friendlyName) + 1) * sizeof(WCHAR)));
-
-        HKEY hSubKey = NULL;
-        if (RegCreateKeyExW(hKey, L"InprocServer32", 0, NULL, 0, KEY_WRITE, NULL, &hSubKey, NULL) == ERROR_SUCCESS) {
-            RegSetValueExW(hSubKey, NULL, 0, REG_SZ, (const BYTE*)szModule, (DWORD)((wcslen(szModule) + 1) * sizeof(WCHAR)));
-            const WCHAR* threading = L"Both";
-            RegSetValueExW(hSubKey, L"ThreadingModel", 0, REG_SZ, (const BYTE*)threading, (DWORD)((wcslen(threading) + 1) * sizeof(WCHAR)));
-            RegCloseKey(hSubKey);
-        }
-        RegCloseKey(hKey);
+        RegDeleteKeyW(HKEY_CURRENT_USER, k);
     }
 
-    // 2. Register under DirectShow Video Input Category {860BB310-5D01-11D0-BD3B-00A0C911CE86}
-    const WCHAR* catKey = L"Software\\Classes\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, catKey, 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        const WCHAR* name = L"LinkCam Virtual Camera";
-        RegSetValueExW(hKey, L"FriendlyName", 0, REG_SZ, (const BYTE*)name, (DWORD)((wcslen(name) + 1) * sizeof(WCHAR)));
-        const WCHAR* filterClsid = L"{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
-        RegSetValueExW(hKey, L"CLSID", 0, REG_SZ, (const BYTE*)filterClsid, (DWORD)((wcslen(filterClsid) + 1) * sizeof(WCHAR)));
+    // 1. Explicit COM InprocServer32 and Category Registration in HKCU (user level) & HKLM (machine level)
+    RegisterInprocServer(HKEY_CURRENT_USER, szModule);
+    RegisterCategoryKeys(HKEY_CURRENT_USER);
 
-        // Critical for OBS Studio (libdshowcapture) device discovery:
-        const WCHAR* devicePath = L"\\\\?\\root#media#linkcam_virtual_camera";
-        RegSetValueExW(hKey, L"DevicePath", 0, REG_SZ, (const BYTE*)devicePath, (DWORD)((wcslen(devicePath) + 1) * sizeof(WCHAR)));
-        const WCHAR* desc = L"LinkCam DirectShow Virtual Webcam";
-        RegSetValueExW(hKey, L"Description", 0, REG_SZ, (const BYTE*)desc, (DWORD)((wcslen(desc) + 1) * sizeof(WCHAR)));
+    RegisterInprocServer(HKEY_LOCAL_MACHINE, szModule);
+    RegisterCategoryKeys(HKEY_LOCAL_MACHINE);
 
-        RegCloseKey(hKey);
+    // 2. Register via IFilterMapper2 under VideoInputDeviceCategory
+    // Generates the standard binary FilterData blob required by OBS libdshowcapture and DirectShow graph builder
+    HRESULT hrCo = CoInitialize(NULL);
+    IFilterMapper2* pFm2 = NULL;
+    HRESULT hrFm = CoCreateInstance(CLSID_FilterMapper2, NULL, CLSCTX_INPROC_SERVER,
+                                    IID_IFilterMapper2, (void**)&pFm2);
+    if (SUCCEEDED(hrFm) && pFm2) {
+        REGPINTYPES regTypes[4] = {
+            { &MEDIATYPE_Video, &MEDIASUBTYPE_NV12 },
+            { &MEDIATYPE_Video, &MEDIASUBTYPE_YUY2 },
+            { &MEDIATYPE_Video, &MEDIASUBTYPE_RGB32 },
+            { &MEDIATYPE_Video, &MEDIASUBTYPE_RGB24 }
+        };
+
+        REGFILTERPINS2 regPins = {0};
+        regPins.dwFlags = REG_PINFLAG_B_OUTPUT;
+        regPins.cInstances = 1;
+        regPins.nMediaTypes = 4;
+        regPins.lpMediaType = regTypes;
+        regPins.nMediums = 0;
+        regPins.lpMedium = NULL;
+        regPins.clsPinCategory = &LinkCam_PIN_CATEGORY_CAPTURE;
+
+        REGFILTER2 rf2 = {0};
+        rf2.dwVersion = 2;
+        rf2.dwMerit = MERIT_DO_NOT_USE;
+        rf2.cPins = 1;
+        rf2.rgPins2 = &regPins;
+
+        pFm2->RegisterFilter(CLSID_LinkCamDShowFilter,
+                             L"LinkCam Virtual Camera",
+                             NULL,
+                             &CLSID_VideoInputDeviceCategory,
+                             NULL,
+                             &rf2);
+        pFm2->Release();
     }
+    if (SUCCEEDED(hrCo)) {
+        CoUninitialize();
+    }
+
     return S_OK;
 }
 
 STDAPI DllUnregisterServer() {
+    HRESULT hrCo = CoInitialize(NULL);
+    IFilterMapper2* pFm2 = NULL;
+    if (SUCCEEDED(CoCreateInstance(CLSID_FilterMapper2, NULL, CLSCTX_INPROC_SERVER,
+                                   IID_IFilterMapper2, (void**)&pFm2))) {
+        pFm2->UnregisterFilter(&CLSID_VideoInputDeviceCategory, NULL, CLSID_LinkCamDShowFilter);
+        pFm2->Release();
+    }
+    if (SUCCEEDED(hrCo)) {
+        CoUninitialize();
+    }
+
     // Clean HKCU
     RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\Classes\\CLSID\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}\\InprocServer32");
     RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\Classes\\CLSID\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}");
@@ -1441,11 +1579,12 @@ STDAPI DllUnregisterServer() {
     RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\Classes\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\LinkCamVirtualCamera");
     RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\Classes\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\LinkCam Virtual Camera");
 
-    // Also clean HKLM if present to eliminate duplicate/orphaned registrations
+    // Clean HKLM
     RegDeleteKeyW(HKEY_LOCAL_MACHINE, L"Software\\Classes\\CLSID\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}\\InprocServer32");
     RegDeleteKeyW(HKEY_LOCAL_MACHINE, L"Software\\Classes\\CLSID\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}");
     RegDeleteKeyW(HKEY_LOCAL_MACHINE, L"Software\\Classes\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}");
     RegDeleteKeyW(HKEY_LOCAL_MACHINE, L"Software\\Classes\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\LinkCamVirtualCamera");
     RegDeleteKeyW(HKEY_LOCAL_MACHINE, L"Software\\Classes\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\LinkCam Virtual Camera");
+
     return S_OK;
 }

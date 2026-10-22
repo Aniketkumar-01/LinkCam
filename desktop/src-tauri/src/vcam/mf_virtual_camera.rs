@@ -42,13 +42,29 @@ impl VirtualCameraDevice {
     fn find_directshow_dll() -> Option<PathBuf> {
         let exe_dir = std::env::current_exe()
             .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))?;
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
 
-        let mut candidates = vec![
-            exe_dir.join("LinkCamDShow64.dll"),
-            exe_dir.join("LinkCamDShow.dll"),
-            PathBuf::from(r"C:\Program Files\LinkCam\LinkCamDShow64.dll"),
-        ];
+        let mut candidates = Vec::new();
+
+        if let Some(ref dir) = exe_dir {
+            candidates.push(dir.join("LinkCamDShow64.dll"));
+            candidates.push(dir.join("LinkCamDShow.dll"));
+            candidates.push(dir.join(r"vcam-dshow\LinkCamDShow64.dll"));
+            candidates.push(dir.join(r"..\vcam-dshow\LinkCamDShow64.dll"));
+            candidates.push(dir.join(r"..\..\vcam-dshow\LinkCamDShow64.dll"));
+            candidates.push(dir.join(r"..\..\..\vcam-dshow\LinkCamDShow64.dll"));
+        }
+
+        if let Ok(cwd) = std::env::current_dir() {
+            candidates.push(cwd.join("LinkCamDShow64.dll"));
+            candidates.push(cwd.join(r"desktop\vcam-dshow\LinkCamDShow64.dll"));
+            candidates.push(cwd.join(r"vcam-dshow\LinkCamDShow64.dll"));
+            candidates.push(cwd.join(r"..\vcam-dshow\LinkCamDShow64.dll"));
+        }
+
+        candidates.push(PathBuf::from(r"d:\AG\LinkCam\desktop\vcam-dshow\LinkCamDShow64.dll"));
+        candidates.push(PathBuf::from(r"D:\Programs\LinkCam\LinkCamDShow64.dll"));
+        candidates.push(PathBuf::from(r"C:\Program Files\LinkCam\LinkCamDShow64.dll"));
 
         if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
             candidates.push(PathBuf::from(local_app_data).join(r"Programs\LinkCam\LinkCamDShow64.dll"));
@@ -56,10 +72,6 @@ impl VirtualCameraDevice {
         if let Ok(prog_files) = std::env::var("ProgramFiles") {
             candidates.push(PathBuf::from(prog_files).join(r"LinkCam\LinkCamDShow64.dll"));
         }
-        // Dev paths
-        candidates.push(exe_dir.join(r"..\..\..\vcam-dshow\LinkCamDShow64.dll"));
-        candidates.push(exe_dir.join(r"..\..\vcam-dshow\LinkCamDShow64.dll"));
-        candidates.push(PathBuf::from(r"d:\AG\LinkCam\desktop\vcam-dshow\LinkCamDShow64.dll"));
 
         candidates.into_iter().find(|p| p.exists())
     }
@@ -85,8 +97,8 @@ impl VirtualCameraDevice {
         }
     }
 
-    /// Ensure DevicePath is written for OBS Studio libdshowcapture recognition
-    fn ensure_device_path() {
+    /// Ensure DevicePath and InprocServer32 are written for OBS Studio libdshowcapture recognition
+    fn ensure_device_path(dll_path: Option<&PathBuf>) {
         let key = r"HKCU\Software\Classes\CLSID\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\Instance\{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
         let _ = std::process::Command::new("reg.exe")
             .args(&["add", key, "/v", "DevicePath", "/t", "REG_SZ", "/d", r"\\?\root#media#linkcam_virtual_camera", "/f"])
@@ -97,6 +109,23 @@ impl VirtualCameraDevice {
         let _ = std::process::Command::new("reg.exe")
             .args(&["add", key, "/v", "CLSID", "/t", "REG_SZ", "/d", "{D37E5526-92F7-4E61-A76F-B590E8F88E29}", "/f"])
             .output();
+        let _ = std::process::Command::new("reg.exe")
+            .args(&["add", key, "/v", "Description", "/t", "REG_SZ", "/d", "LinkCam DirectShow Virtual Webcam", "/f"])
+            .output();
+
+        if let Some(dll) = dll_path {
+            let clsid_key = r"HKCU\Software\Classes\CLSID\{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
+            let _ = std::process::Command::new("reg.exe")
+                .args(&["add", clsid_key, "/ve", "/t", "REG_SZ", "/d", "LinkCam Virtual Camera", "/f"])
+                .output();
+            let inproc_key = format!(r"{}\InprocServer32", clsid_key);
+            let _ = std::process::Command::new("reg.exe")
+                .args(&["add", &inproc_key, "/ve", "/t", "REG_SZ", "/d", &dll.to_string_lossy(), "/f"])
+                .output();
+            let _ = std::process::Command::new("reg.exe")
+                .args(&["add", &inproc_key, "/v", "ThreadingModel", "/t", "REG_SZ", "/d", "Both", "/f"])
+                .output();
+        }
     }
 
     /// Register LinkCam in Windows DirectShow (Win 10/11) and Media Foundation (Win 11)
@@ -105,6 +134,11 @@ impl VirtualCameraDevice {
 
         #[cfg(target_os = "windows")]
         {
+            // Re-probe for the filter DLL in case it was compiled after launch
+            if self.filter_dll_path.is_none() {
+                self.filter_dll_path = Self::find_directshow_dll();
+            }
+
             // Clean any stale / duplicate entries first so only one entry appears
             Self::clean_legacy_registries();
 
@@ -130,20 +164,19 @@ impl VirtualCameraDevice {
                 }
             } else {
                 println!(
-                    "[LinkCam] Shared Memory '{}' and event '{}' are active for video streaming. (DirectShow Filter DLL not found in executable directory; install via installer or run regsvr32 LinkCamDShow64.dll to expose camera to Windows apps).",
-                    SHM_NAME, SHM_EVENT_NAME
+                    "[LinkCam] ATTENTION: LinkCamDShow64.dll not found in search paths. Run 'desktop\\vcam-dshow\\build.bat' to build and register the DirectShow filter DLL."
                 );
             }
 
-            // Ensure DevicePath is explicitly written for OBS Studio libdshowcapture
-            Self::ensure_device_path();
+            // Ensure DevicePath and InprocServer32 are explicitly written for OBS Studio libdshowcapture
+            Self::ensure_device_path(self.filter_dll_path.as_ref());
 
-            // 2. Windows 11 Media Foundation Virtual Camera API probe
-            let is_win11_mf = Self::check_windows11_mf();
-            if is_win11_mf {
-                println!("[LinkCam] Windows 11 Media Foundation Virtual Camera API verified (mfplat!MFCreateVirtualCamera available).");
+            // 2. Windows 11 Media Foundation Virtual Camera API registration
+            let mf_registered = Self::try_register_windows11_mf(&self.name, Self::CLSID_LINKCAM_DSHOW_FILTER);
+            if mf_registered {
+                println!("[LinkCam] Windows 11 Media Foundation Virtual Camera registration active.");
             } else {
-                println!("[LinkCam] Windows 10 environment detected: DirectShow COM filter is active as the primary virtual camera path.");
+                println!("[LinkCam] Media Foundation Virtual Camera fallback: DirectShow COM filter is active as primary virtual camera path.");
             }
         }
 
@@ -152,18 +185,55 @@ impl VirtualCameraDevice {
     }
 
     #[cfg(target_os = "windows")]
-    fn check_windows11_mf() -> bool {
+    fn try_register_windows11_mf(friendly_name: &str, clsid_str: &str) -> bool {
         use windows::core::w;
         use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 
+        type FnMFCreateVirtualCamera = unsafe extern "system" fn(
+            camera_type: u32,
+            lifetime: u32,
+            access: u32,
+            friendly_name: *const u16,
+            source_id: *const u16,
+            categories: *const windows::core::GUID,
+            category_count: u32,
+            virtual_camera: *mut *mut std::ffi::c_void,
+        ) -> windows::core::HRESULT;
+
         unsafe {
-            let h_mod = LoadLibraryW(w!("mfplat.dll"));
-            if let Ok(handle) = h_mod {
-                let proc = GetProcAddress(handle, windows::core::s!("MFCreateVirtualCamera"));
-                return proc.is_some();
+            let h_mod = match LoadLibraryW(w!("mfplat.dll")) {
+                Ok(h) => h,
+                Err(_) => return false,
+            };
+
+            let proc = GetProcAddress(h_mod, windows::core::s!("MFCreateVirtualCamera"));
+            let mf_create: FnMFCreateVirtualCamera = match proc {
+                Some(p) => std::mem::transmute(p),
+                None => return false,
+            };
+
+            let name_wide: Vec<u16> = friendly_name.encode_utf16().chain(std::iter::once(0)).collect();
+            let id_wide: Vec<u16> = clsid_str.encode_utf16().chain(std::iter::once(0)).collect();
+
+            let mut vcam_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+            let hr = mf_create(
+                0, // MFVirtualCameraType_SoftwareCameraSource
+                0, // MFVirtualCameraLifetime_Session
+                0, // MFVirtualCameraAccess_CurrentUser
+                name_wide.as_ptr(),
+                id_wide.as_ptr(),
+                std::ptr::null(),
+                0,
+                &mut vcam_ptr,
+            );
+
+            if hr.is_ok() && !vcam_ptr.is_null() {
+                println!("[LinkCam] Windows 11 user-mode Virtual Camera successfully created via MFCreateVirtualCamera!");
+                return true;
+            } else {
+                return false;
             }
         }
-        false
     }
 
     /// Unregister when the companion app closes

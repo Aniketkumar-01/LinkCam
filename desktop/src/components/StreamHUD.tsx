@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, BatteryCharging, Gauge, Wifi, Zap } from 'lucide-react';
+import { Activity, BatteryCharging, Gauge, Mic, MicOff, Wifi, Zap } from 'lucide-react';
 
 interface StreamHUDProps {
   fps: number;
@@ -9,6 +9,8 @@ interface StreamHUDProps {
   isCharging: boolean;
   connectionMode: 'Usb' | 'DirectHotspot' | 'WiFi';
   isVcamActive: boolean;
+  hasAudio?: boolean;
+  audioLevelRms?: number;
   onOpenDiagnostics?: () => void;
 }
 
@@ -20,6 +22,8 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
   isCharging,
   connectionMode,
   isVcamActive,
+  hasAudio = false,
+  audioLevelRms = 0,
   onOpenDiagnostics,
 }) => {
   const bitrateMbps = (bitrateKbps / 1000).toFixed(1);
@@ -81,6 +85,28 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
           <span className="font-mono tabular-nums text-slate-100">{latencyMs}</span>
           <span className="text-[10px] text-slate-400">ms</span>
         </button>
+
+        <div className="w-px h-3.5 bg-white/[0.12]" />
+
+        {/* Phone Microphone Audio Telemetry */}
+        <div
+          className="flex items-center gap-1.5 text-slate-300"
+          title={hasAudio ? `Phone Microphone Active (48kHz 16-bit PCM)` : 'Phone Microphone Ready'}
+        >
+          {hasAudio ? (
+            <Mic className="w-3.5 h-3.5 text-emerald-400" />
+          ) : (
+            <MicOff className="w-3.5 h-3.5 text-slate-500" />
+          )}
+          <div className="w-9 h-1.5 bg-white/10 rounded-full overflow-hidden flex items-center">
+            <div
+              className={`h-full transition-all duration-100 rounded-full ${
+                hasAudio ? 'bg-emerald-400' : 'bg-slate-600'
+              }`}
+              style={{ width: `${hasAudio ? Math.min(100, Math.max(10, audioLevelRms * 200)) : 0}%` }}
+            />
+          </div>
+        </div>
 
         <div className="w-px h-3.5 bg-white/[0.12]" />
 

@@ -55,8 +55,13 @@ LinkCam is an Apple Continuity Camera companion for Android and Windows. It prov
 - [ ] Hotspot pairing works with zero router dependencies
 
 ### Phase 4: Verification, Polish & Performance Hardening
-- [ ] Task 14: End-to-End Latency & Stream Performance Optimization
-- [ ] Task 15: Impeccable Design Audit & Polish (Zero AI Slop verification)
+- [x] Task 14: End-to-End Latency & Stream Performance Optimization
+- [x] Task 15: Impeccable Design Audit & Polish (Zero AI Slop verification)
+
+### Phase 5: DroidCam Comparative Enhancements
+- [x] Task 16: Granular Hardware Camera Controls (Zoom, EV, Torch, Lens)
+- [x] Task 17: Low-Latency Phone Audio Streaming & Desktop VU Telemetry
+- [x] Task 18: Windows 11 Native Media Foundation User-Mode Virtual Camera
 
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |

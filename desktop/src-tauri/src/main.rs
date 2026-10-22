@@ -21,6 +21,8 @@ pub struct SessionStatusResponse {
     pub bitrate_kbps: u32,
     pub latency_ms: u32,
     pub connection_mode: String,
+    pub audio_level_rms: f32,
+    pub has_audio: bool,
 }
 
 #[tauri::command]
@@ -53,6 +55,9 @@ async fn get_connection_status(server: tauri::State<'_, Arc<NetworkServer>>) -> 
             .map(|d| d.client_name.clone())
             .unwrap_or_else(|| "Android Device".to_string());
 
+        let has_audio = s.total_audio_frames > 0;
+        let audio_level_rms = s.last_audio_level_rms;
+
         Ok(SessionStatusResponse {
             is_connected: true,
             device_name: dev_name,
@@ -62,6 +67,8 @@ async fn get_connection_status(server: tauri::State<'_, Arc<NetworkServer>>) -> 
             bitrate_kbps,
             latency_ms,
             connection_mode: conn_mode,
+            audio_level_rms,
+            has_audio,
         })
     } else {
         Ok(SessionStatusResponse {
@@ -73,8 +80,60 @@ async fn get_connection_status(server: tauri::State<'_, Arc<NetworkServer>>) -> 
             bitrate_kbps: 0,
             latency_ms: 0,
             connection_mode: "Disconnected".to_string(),
+            audio_level_rms: 0.0,
+            has_audio: false,
         })
     }
+}
+
+#[tauri::command]
+async fn send_camera_control(
+    server: tauri::State<'_, Arc<NetworkServer>>,
+    action: String,
+    params: serde_json::Value,
+) -> Result<(), String> {
+    let cmd = match action.as_str() {
+        "set_zoom" => {
+            let ratio = params.get("ratio")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(1.0) as f32;
+            linkcam_protocol::CameraControl::SetZoom { ratio }
+        }
+        "set_exposure" => {
+            let ev = params.get("ev")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as f32;
+            linkcam_protocol::CameraControl::SetExposure { ev, auto: false }
+        }
+        "set_torch" => {
+            let enabled = params.get("enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            linkcam_protocol::CameraControl::SetTorch { enabled }
+        }
+        "set_lens" => {
+            let lens_str = params.get("lens")
+                .and_then(|v| v.as_str())
+                .unwrap_or("RearWide");
+            let lens = match lens_str {
+                "Front" => linkcam_protocol::CameraLens::Front,
+                "RearUltraWide" => linkcam_protocol::CameraLens::RearUltraWide,
+                "RearTelephoto" => linkcam_protocol::CameraLens::RearTelephoto,
+                _ => linkcam_protocol::CameraLens::RearWide,
+            };
+            linkcam_protocol::CameraControl::SetCameraLens { lens }
+        }
+        "set_meeting_mode" => {
+            let enabled = params.get("enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            linkcam_protocol::CameraControl::SetMeetingMode { enabled }
+        }
+        _ => return Err(format!("Unknown camera control action: {}", action)),
+    };
+
+    server.send_camera_control(cmd).await
+        .map_err(|e| format!("Failed to send camera control: {}", e))
 }
 
 #[tauri::command]
@@ -222,7 +281,8 @@ fn main() {
             trust_adb_device,
             pair_adb_device,
             manual_usb_pair,
-            get_latest_frame_info
+            get_latest_frame_info,
+            send_camera_control
         ])
         .setup(move |_app| {
             println!("[LinkCam] Starting LinkCam Windows Desktop Companion Engine...");
