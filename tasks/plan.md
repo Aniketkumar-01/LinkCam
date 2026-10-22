@@ -63,6 +63,11 @@ LinkCam is an Apple Continuity Camera companion for Android and Windows. It prov
 - [x] Task 17: Low-Latency Phone Audio Streaming & Desktop VU Telemetry
 - [x] Task 18: Windows 11 Native Media Foundation User-Mode Virtual Camera
 
+### Phase 6: Universal Virtual Camera Compatibility (Zoom, Meet, WhatsApp)
+- [ ] Task 19: DirectShow Filter Registration & FilterData Auto-Generation (Universal Zoom/OBS/Chrome discovery)
+- [ ] Task 20: CleanPoint Keyframe Tagging & Media Foundation MFT Decoder Robustness in DirectShow Filter
+- [ ] Task 21: Windows 11 Virtual Camera Activation & Desktop Raw NV12 Frame Streaming Support
+
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |
 |------|--------|------------|

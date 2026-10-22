@@ -335,3 +335,55 @@
 - `desktop/src-tauri/src/vcam/mf_virtual_camera.rs`
 **Estimated scope:** S (1 file)
 
+---
+
+## Phase 6: Universal Virtual Camera Compatibility (Zoom, Meet, WhatsApp)
+
+### Task 19: DirectShow Filter Registration & FilterData Auto-Generation
+**Description:** Ensure DirectShow's `CreateClassEnumerator` immediately discovers "LinkCam Virtual Camera" in Zoom, OBS, and Google Meet without administrator privileges by writing the canonical binary `FilterData` blob to both `HKCU` and `HKLM`.
+**Acceptance criteria:**
+- [x] `LinkCamDShow.cpp` generates standard binary `FilterData` in `RegisterCategoryKeys()` for `HKEY_CURRENT_USER` and `HKEY_LOCAL_MACHINE`.
+- [x] `mf_virtual_camera.rs` writes `FilterData` in `ensure_device_path()` whenever desktop companion starts.
+- [x] Inno Setup installer script (`installer.iss`) updated to version 1.2.4 with admin privileges and clean COM filter registration.
+**Verification:**
+- [x] Registry verification shows `FilterData` binary value present under `CLSID_VideoInputDeviceCategory\Instance\{D37E5526-92F7-4E61-A76F-B590E8F88E29}`.
+**Dependencies:** Task 18
+**Files likely touched:**
+- `desktop/vcam-dshow/LinkCamDShow.cpp`
+- `desktop/src-tauri/src/vcam/mf_virtual_camera.rs`
+- `desktop/installer.iss`
+**Estimated scope:** S (3 files)
+
+---
+
+### Task 20: CleanPoint Keyframe Tagging & Media Foundation MFT Decoder Robustness
+**Description:** Fix H.264 decoding in `LinkCamDShow.cpp` by tagging keyframes with `MFSampleExtension_CleanPoint = 1` and continuously draining output buffers so reference-frame buffering and B-frame delays never cause frame drops or black standby screens.
+**Acceptance criteria:**
+- [x] `MftH264Decoder::Decode()` accepts `bool isKeyframe` parameter.
+- [x] Sets `MFSampleExtension_CleanPoint = 1` on keyframe `IMFSample` before calling `ProcessInput`.
+- [x] Continuously drains output queue across consecutive `ThreadProc` iterations, preventing decoder pipeline starvation.
+**Verification:**
+- [x] Code inspection and compilation verify clean point attribute and drain logic.
+**Dependencies:** Task 19
+**Files likely touched:**
+- `desktop/vcam-dshow/LinkCamDShow.cpp`
+**Estimated scope:** S (1 file)
+
+---
+
+### Task 21: Windows 11 Virtual Camera Activation & Desktop Raw NV12 Frame Streaming Support
+**Description:** Complete the Windows 11 user-mode virtual camera integration by calling `pVirtualCamera->Start(nullptr)` and keeping the COM interface alive, and enable direct uncompressed NV12 frame delivery in shared memory for zero-decode host performance.
+**Acceptance criteria:**
+- [x] `mf_virtual_camera.rs` calls `->Start(nullptr)` on `IMFVirtualCamera` and retains the COM pointer while registered.
+- [x] Shared memory supports direct raw NV12 / RGB32 payloads (`format: 1`) allowing zero-decode DirectShow rendering.
+- [x] DirectShow filter cleanly handles both H.264 (`format: 0`) and raw NV12 (`format: 1`).
+**Verification:**
+- [x] Rust and C++ virtual camera components compile cleanly.
+**Dependencies:** Task 19, Task 20
+**Files likely touched:**
+- `desktop/src-tauri/src/vcam/mf_virtual_camera.rs`
+- `desktop/src-tauri/src/vcam/frame_sink.rs`
+- `desktop/vcam-dshow/LinkCamDShow.cpp`
+**Estimated scope:** M (3 files)
+
+

@@ -33,7 +33,7 @@ git add .
 
 REM 5. Commit changes
 echo [*] Committing changes...
-git commit -m "fix(ci): resolve Android and Windows compilation errors for !TAG! release" 2>nul || git commit -m "release: !TAG! - Continuity Camera Companion" 2>nul || echo [*] Working tree clean.
+git commit -m "release: !TAG! - Universal Virtual Camera Compatibility & Discrete Controls" 2>nul || echo [*] Working tree clean.
 
 REM 6. Push to main branch
 echo [*] Pushing to GitHub (main)...

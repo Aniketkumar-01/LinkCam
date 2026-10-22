@@ -20,6 +20,8 @@ pub struct VirtualCameraDevice {
     sink: Arc<VirtualCameraSink>,
     registered: bool,
     filter_dll_path: Option<PathBuf>,
+    #[cfg(target_os = "windows")]
+    mf_vcam: Option<windows::Win32::Media::MediaFoundation::IMFVirtualCamera>,
 }
 
 impl VirtualCameraDevice {
@@ -36,6 +38,8 @@ impl VirtualCameraDevice {
             sink,
             registered: false,
             filter_dll_path,
+            #[cfg(target_os = "windows")]
+            mf_vcam: None,
         }
     }
 
@@ -97,7 +101,7 @@ impl VirtualCameraDevice {
         }
     }
 
-    /// Ensure DevicePath and InprocServer32 are written for OBS Studio libdshowcapture recognition
+    /// Ensure DevicePath, InprocServer32, and FilterData are written for OBS Studio libdshowcapture and DirectShow recognition
     fn ensure_device_path(dll_path: Option<&PathBuf>) {
         let key = r"HKCU\Software\Classes\CLSID\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\Instance\{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
         let _ = std::process::Command::new("reg.exe")
@@ -111,6 +115,12 @@ impl VirtualCameraDevice {
             .output();
         let _ = std::process::Command::new("reg.exe")
             .args(&["add", key, "/v", "Description", "/t", "REG_SZ", "/d", "LinkCam DirectShow Virtual Webcam", "/f"])
+            .output();
+
+        // If HKLM already has the DirectShow FilterData binary blob, copy it into HKCU so user-mode enumerators discover it immediately
+        let hklm_key = r"HKLM\Software\Classes\CLSID\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\Instance\{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
+        let _ = std::process::Command::new("reg.exe")
+            .args(&["copy", hklm_key, key, "/s", "/f"])
             .output();
 
         if let Some(dll) = dll_path {
@@ -168,13 +178,13 @@ impl VirtualCameraDevice {
                 );
             }
 
-            // Ensure DevicePath and InprocServer32 are explicitly written for OBS Studio libdshowcapture
+            // Ensure DevicePath, InprocServer32, and FilterData are explicitly written for OBS Studio and Zoom
             Self::ensure_device_path(self.filter_dll_path.as_ref());
 
-            // 2. Windows 11 Media Foundation Virtual Camera API registration
-            let mf_registered = Self::try_register_windows11_mf(&self.name, Self::CLSID_LINKCAM_DSHOW_FILTER);
-            if mf_registered {
-                println!("[LinkCam] Windows 11 Media Foundation Virtual Camera registration active.");
+            // 2. Windows 11 Media Foundation Virtual Camera API registration & activation
+            self.mf_vcam = Self::try_register_windows11_mf(&self.name, Self::CLSID_LINKCAM_DSHOW_FILTER);
+            if self.mf_vcam.is_some() {
+                println!("[LinkCam] Windows 11 Media Foundation Virtual Camera registration active and started.");
             } else {
                 println!("[LinkCam] Media Foundation Virtual Camera fallback: DirectShow COM filter is active as primary virtual camera path.");
             }
@@ -185,9 +195,10 @@ impl VirtualCameraDevice {
     }
 
     #[cfg(target_os = "windows")]
-    fn try_register_windows11_mf(friendly_name: &str, clsid_str: &str) -> bool {
+    fn try_register_windows11_mf(friendly_name: &str, clsid_str: &str) -> Option<windows::Win32::Media::MediaFoundation::IMFVirtualCamera> {
         use windows::core::w;
         use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+        use windows::Win32::Media::MediaFoundation::IMFVirtualCamera;
 
         type FnMFCreateVirtualCamera = unsafe extern "system" fn(
             camera_type: u32,
@@ -203,13 +214,13 @@ impl VirtualCameraDevice {
         unsafe {
             let h_mod = match LoadLibraryW(w!("mfplat.dll")) {
                 Ok(h) => h,
-                Err(_) => return false,
+                Err(_) => return None,
             };
 
             let proc = GetProcAddress(h_mod, windows::core::s!("MFCreateVirtualCamera"));
             let mf_create: FnMFCreateVirtualCamera = match proc {
                 Some(p) => std::mem::transmute(p),
-                None => return false,
+                None => return None,
             };
 
             let name_wide: Vec<u16> = friendly_name.encode_utf16().chain(std::iter::once(0)).collect();
@@ -228,10 +239,16 @@ impl VirtualCameraDevice {
             );
 
             if hr.is_ok() && !vcam_ptr.is_null() {
-                println!("[LinkCam] Windows 11 user-mode Virtual Camera successfully created via MFCreateVirtualCamera!");
-                return true;
+                let vcam: IMFVirtualCamera = std::mem::transmute(vcam_ptr);
+                let start_res = vcam.Start(None);
+                if start_res.is_ok() {
+                    println!("[LinkCam] Windows 11 user-mode Virtual Camera successfully created and STARTED via MFCreateVirtualCamera!");
+                } else {
+                    println!("[LinkCam] Windows 11 Virtual Camera created, Start returned: {:?}", start_res);
+                }
+                Some(vcam)
             } else {
-                return false;
+                None
             }
         }
     }
@@ -241,6 +258,13 @@ impl VirtualCameraDevice {
         if self.registered {
             #[cfg(target_os = "windows")]
             {
+                if let Some(vcam) = self.mf_vcam.take() {
+                    unsafe {
+                        let _ = vcam.Stop();
+                    }
+                    println!("[LinkCam] Media Foundation Virtual Camera stopped.");
+                }
+
                 if let Some(dll_path) = &self.filter_dll_path {
                     let dll_str = dll_path.to_string_lossy();
                     let _ = std::process::Command::new("regsvr32.exe")

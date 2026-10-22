@@ -69,6 +69,20 @@ DEFINE_GUID(CLSID_CMSH264DecoderMFT,
     0x62ce7e72, 0x4c71, 0x4d20, 0xb1, 0x5d, 0x45, 0x28, 0x31, 0xa8, 0x7d, 0x9d);
 #endif
 
+// IAMFilterData: {97F7C4D4-547B-4A5F-8332-536430AD2E4D}
+#ifndef __IAMFilterData_INTERFACE_DEFINED__
+#define __IAMFilterData_INTERFACE_DEFINED__
+interface DECLSPEC_UUID("97f7c4d4-547b-4a5f-8332-536430ad2e4d") DECLSPEC_NOVTABLE
+IAMFilterData : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE ParseFilterData(BYTE *rgbFilterData, ULONG cb, BYTE **ppRegFilter) = 0;
+    virtual HRESULT STDMETHODCALLTYPE CreateFilterData(REGFILTER2 *pRegFilter, BYTE **prgbFilterData, ULONG *pcb) = 0;
+};
+#endif
+#ifndef IID_IAMFilterData
+DEFINE_GUID(IID_IAMFilterData,
+    0x97f7c4d4, 0x547b, 0x4a5f, 0x83, 0x32, 0x53, 0x64, 0x30, 0xad, 0x2e, 0x4d);
+#endif
+
 #define SHM_NAME L"Local\\LinkCam_Video_Shm"
 #define SHM_EVENT_NAME L"Local\\LinkCam_Video_Event"
 #define SHM_MAGIC 0x4C4E4B43 // 'LNKC'
@@ -332,7 +346,7 @@ public:
         return gotFrame;
     }
 
-    bool Decode(const uint8_t* pNalData, uint32_t nalSize, uint64_t timestampUs,
+    bool Decode(const uint8_t* pNalData, uint32_t nalSize, uint64_t timestampUs, bool isKeyframe,
                 std::vector<uint8_t>& outNv12) {
         if (!m_initialized && !Init(m_width, m_height)) return false;
         if (!pNalData || nalSize == 0) return false;
@@ -358,6 +372,13 @@ public:
         // Android emits ms; convert ms to 100-nanosecond units (* 10000) for Media Foundation
         LONGLONG llTime = (LONGLONG)(timestampUs * 10000);
         pSample->SetSampleTime(llTime);
+
+        // Crucial for hardware H.264 MFT: Tag keyframes with CleanPoint
+        // Without MFSampleExtension_CleanPoint on IDR frames, decoder assumes reference frames
+        // are missing and discards the slice, causing a permanent black/standby screen in Zoom.
+        if (isKeyframe) {
+            pSample->SetUINT32(MFSampleExtension_CleanPoint, 1);
+        }
 
         HRESULT hr = m_pDecoder->ProcessInput(m_inStreamId, pSample, 0);
         pSample->Release();
@@ -1311,7 +1332,17 @@ DWORD WINAPI LinkCamOutputPin::ThreadProc(LPVOID lpParam) {
                     int srcH = (hdr->height > 0) ? (int)hdr->height : 1080;
 
                     if (hdr->format == 0) { // H.264
-                        if (decoder.Decode(localPayload.data(), (uint32_t)localPayload.size(), hdr->timestamp_us, decodedNv12)) {
+                        bool isKey = (hdr->is_keyframe != 0);
+                        if (decoder.Decode(localPayload.data(), (uint32_t)localPayload.size(), hdr->timestamp_us, isKey, decodedNv12)) {
+                            if (decoder.GetWidth() > 0 && decoder.GetHeight() > 0) {
+                                cachedW = (int)decoder.GetWidth();
+                                cachedH = (int)decoder.GetHeight();
+                            } else {
+                                cachedW = srcW;
+                                cachedH = srcH;
+                            }
+                            cachedNv12 = decodedNv12;
+                        } else if (decoder.DrainOutput(decodedNv12)) {
                             if (decoder.GetWidth() > 0 && decoder.GetHeight() > 0) {
                                 cachedW = (int)decoder.GetWidth();
                                 cachedH = (int)decoder.GetHeight();
@@ -1551,6 +1582,49 @@ STDAPI DllRegisterServer() {
                              &CLSID_VideoInputDeviceCategory,
                              NULL,
                              &rf2);
+
+        // Generate binary FilterData blob via IAMFilterData and commit to both HKCU and HKLM
+        // This ensures DirectShow's ICreateDevEnum::CreateClassEnumerator finds LinkCam Virtual Camera
+        // without requiring administrator privileges
+        IAMFilterData* pFd = NULL;
+        if (SUCCEEDED(pFm2->QueryInterface(IID_IAMFilterData, (void**)&pFd)) && pFd) {
+            BYTE* pData = NULL;
+            ULONG cbData = 0;
+            if (SUCCEEDED(pFd->CreateFilterData(&rf2, &pData, &cbData)) && pData && cbData > 0) {
+                const WCHAR* catKey = L"Software\\Classes\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
+                HKEY hKeyU = NULL;
+                if (RegOpenKeyExW(HKEY_CURRENT_USER, catKey, 0, KEY_WRITE, &hKeyU) == ERROR_SUCCESS) {
+                    RegSetValueExW(hKeyU, L"FilterData", 0, REG_BINARY, pData, cbData);
+                    RegCloseKey(hKeyU);
+                }
+                HKEY hKeyM = NULL;
+                if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, catKey, 0, KEY_WRITE, &hKeyM) == ERROR_SUCCESS) {
+                    RegSetValueExW(hKeyM, L"FilterData", 0, REG_BINARY, pData, cbData);
+                    RegCloseKey(hKeyM);
+                }
+                CoTaskMemFree(pData);
+            }
+            pFd->Release();
+        }
+
+        // Fallback: If RegisterFilter populated HKLM, copy FilterData to HKCU
+        const WCHAR* catKey = L"Software\\Classes\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\{D37E5526-92F7-4E61-A76F-B590E8F88E29}";
+        HKEY hKeyM = NULL;
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, catKey, 0, KEY_READ, &hKeyM) == ERROR_SUCCESS) {
+            DWORD dwType = 0, cbVal = 0;
+            if (RegQueryValueExW(hKeyM, L"FilterData", NULL, &dwType, NULL, &cbVal) == ERROR_SUCCESS && cbVal > 0) {
+                std::vector<BYTE> buf(cbVal);
+                if (RegQueryValueExW(hKeyM, L"FilterData", NULL, &dwType, buf.data(), &cbVal) == ERROR_SUCCESS) {
+                    HKEY hKeyU = NULL;
+                    if (RegOpenKeyExW(HKEY_CURRENT_USER, catKey, 0, KEY_WRITE, &hKeyU) == ERROR_SUCCESS) {
+                        RegSetValueExW(hKeyU, L"FilterData", 0, REG_BINARY, buf.data(), cbVal);
+                        RegCloseKey(hKeyU);
+                    }
+                }
+            }
+            RegCloseKey(hKeyM);
+        }
+
         pFm2->Release();
     }
     if (SUCCEEDED(hrCo)) {
