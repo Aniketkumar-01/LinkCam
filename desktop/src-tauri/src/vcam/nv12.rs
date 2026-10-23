@@ -147,8 +147,8 @@ impl Nv12 {
                 BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS,
                 CreateCompatibleDC, CreateDIBSection, CreateFontW, DEFAULT_CHARSET, DIB_RGB_COLORS,
                 DT_CENTER, DT_SINGLELINE, DT_VCENTER, DeleteDC, DeleteObject, DrawTextW, FF_SWISS,
-                FW_SEMIBOLD, GdiFlush, OUT_DEFAULT_PRECIS, SelectObject, SetBkMode, SetTextColor,
-                TRANSPARENT,
+                FW_SEMIBOLD, GdiFlush, HGDIOBJ, OUT_DEFAULT_PRECIS, SelectObject, SetBkMode,
+                SetTextColor, TRANSPARENT,
             };
             use windows::core::w;
 
@@ -168,7 +168,7 @@ impl Nv12 {
                 };
                 let mut bits = std::ptr::null_mut();
                 if let Ok(bitmap) = CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS, &mut bits, None, 0) {
-                    let old_bitmap = SelectObject(dc, bitmap.into());
+                    let old_bitmap = SelectObject(dc, HGDIOBJ(bitmap.0));
                     let font = CreateFontW(
                         -(height as i32 / 24),
                         0,
@@ -178,14 +178,14 @@ impl Nv12 {
                         0,
                         0,
                         0,
-                        DEFAULT_CHARSET,
-                        OUT_DEFAULT_PRECIS,
-                        CLIP_DEFAULT_PRECIS,
-                        CLEARTYPE_QUALITY,
+                        DEFAULT_CHARSET.0 as u32,
+                        OUT_DEFAULT_PRECIS.0 as u32,
+                        CLIP_DEFAULT_PRECIS.0 as u32,
+                        CLEARTYPE_QUALITY.0 as u32,
                         FF_SWISS.0 as u32,
                         w!("Segoe UI"),
                     );
-                    let old_font = SelectObject(dc, font.into());
+                    let old_font = SelectObject(dc, HGDIOBJ(font.0));
                     // Crisp slate text on dark background
                     SetTextColor(dc, COLORREF(0x00E0D0C0));
                     SetBkMode(dc, TRANSPARENT);
@@ -209,8 +209,8 @@ impl Nv12 {
                     let frame = Nv12::from_bgra(width, height, pixels);
                     SelectObject(dc, old_font);
                     SelectObject(dc, old_bitmap);
-                    let _ = DeleteObject(font.into());
-                    let _ = DeleteObject(bitmap.into());
+                    let _ = DeleteObject(HGDIOBJ(font.0));
+                    let _ = DeleteObject(HGDIOBJ(bitmap.0));
                     let _ = DeleteDC(dc);
                     return frame;
                 }
