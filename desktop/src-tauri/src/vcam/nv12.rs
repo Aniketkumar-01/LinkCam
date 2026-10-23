@@ -166,8 +166,8 @@ impl Nv12 {
                     },
                     ..Default::default()
                 };
-                let mut bits = std::ptr::null_mut();
-                if let Ok(bitmap) = CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS, &mut bits, None, 0) {
+                let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+                if let Ok(bitmap) = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut bits, None, 0) {
                     let old_bitmap = SelectObject(dc, HGDIOBJ(bitmap.0));
                     let font = CreateFontW(
                         -(height as i32 / 24),

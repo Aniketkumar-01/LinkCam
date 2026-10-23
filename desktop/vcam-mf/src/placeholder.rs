@@ -29,8 +29,8 @@ pub fn render(width: usize, height: usize) -> PlaceholderFrame {
             },
             ..Default::default()
         };
-        let mut bits = std::ptr::null_mut();
-        let Ok(bitmap) = CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS, &mut bits, None, 0)
+        let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+        let Ok(bitmap) = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut bits, None, 0)
         else {
             let _ = DeleteDC(dc);
             return PlaceholderFrame { data: vec![16; width * height * 3 / 2] };
