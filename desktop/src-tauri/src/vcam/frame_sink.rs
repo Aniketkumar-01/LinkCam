@@ -84,6 +84,9 @@ pub struct VirtualCameraSink {
     win_shm: Option<WinShmState>,
 }
 
+unsafe impl Send for VirtualCameraSink {}
+unsafe impl Sync for VirtualCameraSink {}
+
 impl VirtualCameraSink {
     pub fn new() -> Self {
         #[cfg(target_os = "windows")]

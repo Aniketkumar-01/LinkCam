@@ -20,6 +20,9 @@ pub struct H264Decoder {
     picture: Nv12,
 }
 
+unsafe impl Send for H264Decoder {}
+unsafe impl Sync for H264Decoder {}
+
 impl H264Decoder {
     pub fn new() -> Result<Self> {
         unsafe {

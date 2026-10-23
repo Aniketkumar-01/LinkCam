@@ -162,7 +162,7 @@ mod mapping {
     use super::{NAME, Ring, TOTAL};
     use windows::Win32::Foundation::{
         CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HLOCAL, INVALID_HANDLE_VALUE,
-        LocalFree,
+        LocalFree, WIN32_ERROR,
     };
     use windows::Win32::Security::Authorization::{
         ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
@@ -209,7 +209,10 @@ mod mapping {
                     TOTAL as u32,
                     &HSTRING::from(NAME),
                 );
-                let existed = GetLastError() == ERROR_ALREADY_EXISTS;
+                let existed = GetLastError()
+                    .err()
+                    .and_then(|e| WIN32_ERROR::from_error(&e))
+                    == Some(ERROR_ALREADY_EXISTS);
                 let _ = LocalFree(HLOCAL(sd.0));
                 let mapping = Self::map(handle.ok()?)?;
                 if !existed || !mapping.ring.is_ready() {
